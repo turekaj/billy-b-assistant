@@ -2,6 +2,8 @@
 
 import pytest
 import time
+import json
+from pathlib import Path
 from core import test_mode
 from core.test_mode import MockGPIOHandle, MockButton, MotorEvent
 
@@ -191,3 +193,82 @@ class TestLoggingFunctions:
         assert log[0]["motor"] == "mouth"
         assert log[1]["motor"] == "head"
         assert log[2]["motor"] == "tail"
+
+
+class TestHelperFunctions:
+    """Tests for helper functions."""
+
+    def setup_method(self):
+        """Reset test mode before each test."""
+        test_mode._TEST_MODE_ENABLED = False
+        test_mode.clear_motor_log()
+
+    def test_get_motor_log_pretty(self):
+        """Test pretty-printing motor log."""
+        test_mode.enable_test_mode()
+        test_mode.log_motor_event("mouth", "async", speed_percent=75, duration=0.5)
+
+        pretty_log = test_mode.get_motor_log_pretty()
+        assert "Motor Event Log" in pretty_log
+        assert "MOUTH" in pretty_log
+        assert "ASYNC" in pretty_log
+
+    def test_get_motor_log_pretty_empty(self):
+        """Test pretty-printing empty log."""
+        pretty_log = test_mode.get_motor_log_pretty()
+        assert "No motor events logged" in pretty_log
+
+    def test_save_motor_log(self, tmp_path):
+        """Test saving motor log to JSON file."""
+        test_mode.enable_test_mode()
+        test_mode.log_motor_event("mouth", "async", speed_percent=75, duration=0.5)
+
+        log_file = tmp_path / "test_log.json"
+        test_mode.save_motor_log(str(log_file))
+
+        assert log_file.exists()
+
+        with open(log_file) as f:
+            data = json.load(f)
+
+        assert len(data) == 1
+        assert data[0]["motor"] == "mouth"
+
+    def test_register_virtual_button_handler(self):
+        """Test registering virtual button handlers."""
+        called = {"count": 0}
+
+        def handler():
+            called["count"] += 1
+
+        test_mode.register_virtual_button_handler(handler)
+        test_mode.trigger_virtual_button()
+
+        assert called["count"] == 1
+
+    def test_trigger_virtual_button_multiple_handlers(self):
+        """Test triggering multiple handlers."""
+        results = []
+
+        def handler1():
+            results.append(1)
+
+        def handler2():
+            results.append(2)
+
+        test_mode.register_virtual_button_handler(handler1)
+        test_mode.register_virtual_button_handler(handler2)
+        test_mode.trigger_virtual_button()
+
+        assert results == [1, 2]
+
+    def test_get_test_status(self):
+        """Test getting test status."""
+        test_mode.enable_test_mode()
+        test_mode.log_motor_event("mouth", "async")
+
+        status = test_mode.get_test_status()
+
+        assert status["test_mode_enabled"] is True
+        assert status["motor_events_count"] == 1
+        assert "button_handlers_registered" in status

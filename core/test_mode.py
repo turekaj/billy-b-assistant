@@ -131,3 +131,68 @@ def clear_motor_log() -> None:
     global _motor_log
     with _motor_log_lock:
         _motor_log.clear()
+
+
+def save_motor_log(filepath: str) -> None:
+    """Save motor log to a JSON file."""
+    import json
+    from pathlib import Path
+
+    filepath_obj = Path(filepath)
+    filepath_obj.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(filepath_obj, 'w') as f:
+        json.dump(get_motor_log(), f, indent=2)
+
+
+def get_motor_log_pretty() -> str:
+    """Get motor log formatted as readable text."""
+    with _motor_log_lock:
+        if not _motor_log:
+            return "No motor events logged"
+
+        lines = ["Motor Event Log:", "=" * 80]
+        for event in _motor_log:
+            dt = datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S.%f")[:-3]
+            if event.speed_percent > 0:
+                lines.append(
+                    f"[{dt}] {event.motor.upper():5} {event.action.upper():10} "
+                    f"speed={event.speed_percent:3}% duration={event.duration:.3f}s"
+                )
+            else:
+                lines.append(
+                    f"[{dt}] {event.motor.upper():5} {event.action.upper():10} "
+                    f"duration={event.duration:.3f}s"
+                )
+            if event.details:
+                for key, value in event.details.items():
+                    lines.append(f"        └─ {key}: {value}")
+
+        return "\n".join(lines)
+
+
+# Virtual button handler support
+_virtual_button_handlers: List[Callable] = []
+
+
+def register_virtual_button_handler(handler: Callable) -> None:
+    """Register a handler to be called when virtual button is pressed."""
+    _virtual_button_handlers.append(handler)
+
+
+def trigger_virtual_button() -> None:
+    """Simulate a button press (for testing via web UI or CLI)."""
+    for handler in _virtual_button_handlers:
+        try:
+            handler()
+        except Exception:
+            pass
+
+
+def get_test_status() -> dict:
+    """Get current test mode status."""
+    return {
+        "test_mode_enabled": _TEST_MODE_ENABLED,
+        "motor_events_count": len(get_motor_log()),
+        "button_handlers_registered": len(_virtual_button_handlers),
+    }
