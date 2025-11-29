@@ -1,7 +1,7 @@
 """Unit tests for test_mode module."""
 
 import pytest
-from core.test_mode import MockGPIOHandle
+from core.test_mode import MockGPIOHandle, MockButton
 
 
 class TestMockGPIOHandle:
@@ -53,3 +53,35 @@ class TestMockGPIOHandle:
         self.gpio.close()
         assert len(self.gpio.pins) == 0
         assert len(self.gpio.pwm_state) == 0
+
+
+class TestMockButton:
+    """Tests for MockButton class."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.button = MockButton(pin=24, pull_up=True)
+
+    def test_initialization(self):
+        """Test button initialization."""
+        assert self.button.pin == 24
+        assert self.button.pull_up is True
+        assert self.button.is_pressed is False
+
+    def test_trigger_press(self):
+        """Test triggering button press."""
+        pressed_count = {"count": 0}
+
+        def on_press():
+            pressed_count["count"] += 1
+
+        self.button.when_pressed = on_press
+        self.button.trigger_press()
+
+        assert pressed_count["count"] == 1
+        assert self.button.is_pressed is False  # Should reset after trigger
+
+    def test_trigger_press_without_handler(self):
+        """Test triggering press without handler doesn't crash."""
+        self.button.when_pressed = None
+        self.button.trigger_press()  # Should not raise

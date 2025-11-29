@@ -1,6 +1,6 @@
 """Test mode support for billy-b-assistant - GPU mocking."""
 
-from typing import Dict
+from typing import Dict, Callable, Optional
 
 
 class MockGPIOHandle:
@@ -39,3 +39,20 @@ class MockGPIOHandle:
         """Mock gpiochip_close."""
         self.pins.clear()
         self.pwm_state.clear()
+
+
+class MockButton:
+    """Mock button that simulates gpiozero Button interface."""
+
+    def __init__(self, pin: int, pull_up: bool = True):
+        self.pin = pin
+        self.pull_up = pull_up
+        self.is_pressed = False
+        self.when_pressed: Optional[Callable] = None
+
+    def trigger_press(self) -> None:
+        """Simulate button press (for testing)."""
+        self.is_pressed = True
+        if self.when_pressed:
+            self.when_pressed()
+        self.is_pressed = False
