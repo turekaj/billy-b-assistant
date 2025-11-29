@@ -1,5 +1,11 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "billy-b-assistant"
+version = "0.1.0"
+description = "A voice-interactive AI companion for Billy Bass"
 dependencies = [
   "sounddevice",
   "websockets",
@@ -28,6 +34,9 @@ dev = [
   "gpiozero",
   "lgpio",
 ]
+
+[tool.setuptools]
+packages = ["core", "webconfig"]
 
 [tool.ruff]
 # Places ruff should not look
