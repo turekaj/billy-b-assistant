@@ -10,6 +10,7 @@ import numpy as np
 
 from .config import BILLY_PINS, is_classic_billy
 from .logger import logger
+from . import test_mode
 
 
 # === Configuration ===
@@ -17,9 +18,19 @@ USE_THIRD_MOTOR = is_classic_billy()
 logger.info(f"Using third motor: {USE_THIRD_MOTOR} | Pin profile: {BILLY_PINS}", "⚙️")
 
 # === GPIO Setup ===
-h = lgpio.gpiochip_open(0)
 FREQ = 10000  # PWM frequency
 _gpio_active = True  # Flag to track if GPIO handle is still valid
+h = None  # Will be initialized on first use
+
+def _get_gpio_handle():
+    """Lazy initialization of GPIO handle (defers decision until first use)."""
+    global h
+    if h is None:
+        if test_mode.is_test_mode_enabled():
+            h = test_mode.mock_gpio_handle
+        else:
+            h = lgpio.gpiochip_open(0)
+    return h
 
 # -------------------------------------------------------------------
 # Pin mapping by profile
@@ -49,36 +60,56 @@ else:
 # Collect all pins we actually use
 motor_pins = [p for p in (MOUTH, HEAD, TAIL, GND_1, GND_2, GND_3) if p is not None]
 
-# Claim/initialize
-for pin in motor_pins:
-    try:
-        lgpio.gpio_claim_output(h, pin)
-        lgpio.gpio_write(h, pin, 0)
-    except lgpio.error as e:
-        if "GPIO busy" in str(e) or "busy" in str(e).lower():
-            # Pin is already claimed (likely from a previous crashed instance)
-            # Try to free it first, then claim it again
-            logger.warning(
-                f"GPIO pin {pin} is busy, attempting to free and reclaim...", "⚠️"
-            )
-            try:
-                # Try to free the pin (may fail if not claimed by this handle, but worth trying)
-                with contextlib.suppress(lgpio.error, Exception):
-                    lgpio.gpio_free(h, pin)
-                # Wait a bit for the kernel to clean up
-                time.sleep(0.2)
-                # Now try to claim it again
-                lgpio.gpio_claim_output(h, pin)
-                lgpio.gpio_write(h, pin, 0)
-                logger.info(f"Successfully reclaimed GPIO pin {pin}", "✅")
-            except Exception as free_error:
-                logger.error(
-                    f"Failed to free/reclaim GPIO pin {pin}: {free_error}", "❌"
+# Defer GPIO pin initialization until first use
+_gpio_initialized = False
+
+def _init_gpio_pins():
+    """Initialize GPIO pins. Skip in test mode."""
+    global _gpio_initialized
+    if _gpio_initialized:
+        return
+    _gpio_initialized = True
+
+    if test_mode.is_test_mode_enabled():
+        # In test mode, just create mock pin entries
+        h_obj = _get_gpio_handle()
+        for pin in motor_pins:
+            if hasattr(h_obj, 'claim_output'):
+                h_obj.claim_output(pin)
+                h_obj.write(pin, 0)
+        return
+
+    # Real GPIO initialization
+    h_obj = _get_gpio_handle()
+    for pin in motor_pins:
+        try:
+            lgpio.gpio_claim_output(h_obj, pin)
+            lgpio.gpio_write(h_obj, pin, 0)
+        except lgpio.error as e:
+            if "GPIO busy" in str(e) or "busy" in str(e).lower():
+                # Pin is already claimed (likely from a previous crashed instance)
+                # Try to free it first, then claim it again
+                logger.warning(
+                    f"GPIO pin {pin} is busy, attempting to free and reclaim...", "⚠️"
                 )
+                try:
+                    # Try to free the pin (may fail if not claimed by this handle, but worth trying)
+                    with contextlib.suppress(lgpio.error, Exception):
+                        lgpio.gpio_free(h_obj, pin)
+                    # Wait a bit for the kernel to clean up
+                    time.sleep(0.2)
+                    # Now try to claim it again
+                    lgpio.gpio_claim_output(h_obj, pin)
+                    lgpio.gpio_write(h_obj, pin, 0)
+                    logger.info(f"Successfully reclaimed GPIO pin {pin}", "✅")
+                except Exception as free_error:
+                    logger.error(
+                        f"Failed to free/reclaim GPIO pin {pin}: {free_error}", "❌"
+                    )
+                    raise
+            else:
+                # Some other GPIO error - re-raise it
                 raise
-        else:
-            # Some other GPIO error - re-raise it
-            raise
 
 # === State ===
 _head_tail_lock = Lock()
@@ -94,11 +125,20 @@ _pwm = {pin: {"duty": 0, "since": None} for pin in motor_pins}
 
 def set_pwm(pin: int, duty: int):
     """Start/adjust PWM on pin and remember when it went active."""
-    global _gpio_active
+    global _gpio_active, _gpio_initialized
     if not _gpio_active:
         return  # GPIO handle already closed, skip
+
+    # Initialize GPIO on first use
+    if not _gpio_initialized:
+        _init_gpio_pins()
+
     try:
-        lgpio.tx_pwm(h, pin, FREQ, int(duty))
+        h_obj = _get_gpio_handle()
+        if test_mode.is_test_mode_enabled():
+            h_obj.tx_pwm(pin, FREQ, int(duty))
+        else:
+            lgpio.tx_pwm(h_obj, pin, FREQ, int(duty))
     except (lgpio.error, Exception):
         # Handle already closed or invalid - ignore during shutdown
         _gpio_active = False
