@@ -1,8 +1,8 @@
+# Core dependencies
 sounddevice
 websockets
 numpy
 scipy
-gpiozero
 python-dotenv
 pydub
 paho-mqtt
@@ -10,5 +10,12 @@ requests
 openai
 aiohttp
 flask
-lgpio
 packaging
+
+# GPIO support (Raspberry Pi only) - optional
+# Install with: pip install -e .[rpi]
+# gpiozero
+# lgpio
+
+# Testing
+pytest

@@ -1,5 +1,33 @@
 [project]
 name = "billy-b-assistant"
+dependencies = [
+  "sounddevice",
+  "websockets",
+  "numpy",
+  "scipy",
+  "python-dotenv",
+  "pydub",
+  "paho-mqtt",
+  "requests",
+  "openai",
+  "aiohttp",
+  "flask",
+  "packaging",
+]
+
+[project.optional-dependencies]
+rpi = [
+  "gpiozero",
+  "lgpio",
+]
+test = [
+  "pytest",
+]
+dev = [
+  "pytest",
+  "gpiozero",
+  "lgpio",
+]
 
 [tool.ruff]
 # Places ruff should not look

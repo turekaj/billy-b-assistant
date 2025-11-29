@@ -5,8 +5,13 @@ import threading
 import time
 from threading import Lock, Thread
 
-import lgpio
 import numpy as np
+
+# GPIO is optional - only required on Raspberry Pi
+try:
+    import lgpio
+except ImportError:
+    lgpio = None
 
 from .config import BILLY_PINS, is_classic_billy
 from .logger import logger
@@ -28,6 +33,11 @@ def _get_gpio_handle():
     if h is None:
         if test_mode.is_test_mode_enabled():
             h = test_mode.mock_gpio_handle
+        elif lgpio is None:
+            raise RuntimeError(
+                "lgpio not available. Install with: pip install -e .[rpi]\n"
+                "Or enable test mode with: TEST_MODE=true"
+            )
         else:
             h = lgpio.gpiochip_open(0)
     return h

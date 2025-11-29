@@ -4,9 +4,13 @@ import threading
 import time
 from concurrent.futures import CancelledError
 
-from gpiozero import Button
+# GPIO is optional - only required on Raspberry Pi
+try:
+    from gpiozero import Button
+except ImportError:
+    Button = None
 
-from . import audio, config
+from . import audio, config, test_mode
 from .logger import logger
 from .movements import move_head
 from .session import BillySession
@@ -21,8 +25,8 @@ last_button_time = 0
 button_debounce_delay = 0.5  # seconds debounce
 _session_start_lock = threading.Lock()  # Lock to prevent concurrent session starts
 
-# Setup hardware button
-button = Button(config.BUTTON_PIN, pull_up=True)
+# Setup hardware button (deferred to start_loop)
+button = None
 
 
 def is_billy_speaking():
@@ -139,8 +143,22 @@ def on_button():
             _session_start_lock.release()
 
 
+def _get_button():
+    """Get button instance (real or mock depending on test mode)."""
+    if test_mode.is_test_mode_enabled():
+        return test_mode.mock_button
+    if Button is None:
+        raise RuntimeError(
+            "gpiozero not available. Install with: pip install -e .[rpi]\n"
+            "Or enable test mode with: TEST_MODE=true"
+        )
+    return Button(config.BUTTON_PIN, pull_up=True)
+
+
 def start_loop():
+    global button
     audio.detect_devices(debug=config.DEBUG_MODE)
+    button = _get_button()
     button.when_pressed = on_button
     logger.info(
         "Ready. Press button to start a voice session. Press Ctrl+C to quit.", "🎦"
