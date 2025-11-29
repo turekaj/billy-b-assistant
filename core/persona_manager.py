@@ -4,19 +4,23 @@ Handles loading and switching between different personality configurations.
 """
 
 import configparser
+import os
 from pathlib import Path
 from typing import Any, Optional
 
 from .logger import logger
+
+# Get the project root directory (parent of the core directory)
+PROJECT_ROOT = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
 class PersonaManager:
     """Manages different Billy personas and personality configurations."""
 
     def __init__(self):
-        self.personas_dir = Path("personas")
+        self.personas_dir = PROJECT_ROOT / "personas"
         self.personas_dir.mkdir(exist_ok=True)
-        self.persona_presets_dir = Path("persona_presets")
+        self.persona_presets_dir = PROJECT_ROOT / "persona_presets"
         self.current_persona = "default"  # Default persona
         self._persona_cache: dict[str, dict[str, Any]] = {}
 
@@ -25,7 +29,7 @@ class PersonaManager:
         personas = []
 
         # Add default persona.ini if it exists
-        default_persona_file = Path("persona.ini")
+        default_persona_file = PROJECT_ROOT / "persona.ini"
         if default_persona_file.exists():
             try:
                 config = configparser.ConfigParser()
@@ -79,7 +83,7 @@ class PersonaManager:
 
         # Handle default persona
         if persona_name == "default":
-            persona_file = Path("persona.ini")
+            persona_file = PROJECT_ROOT / "persona.ini"
         else:
             # Check new folder structure first: personas/persona_name/persona.ini
             persona_file = self.personas_dir / persona_name / "persona.ini"

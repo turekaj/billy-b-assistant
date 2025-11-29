@@ -95,8 +95,8 @@ def _init_gpio_pins():
         try:
             lgpio.gpio_claim_output(h_obj, pin)
             lgpio.gpio_write(h_obj, pin, 0)
-        except lgpio.error as e:
-            if "GPIO busy" in str(e) or "busy" in str(e).lower():
+        except Exception as e:
+            if lgpio and "GPIO busy" in str(e) or "busy" in str(e).lower():
                 # Pin is already claimed (likely from a previous crashed instance)
                 # Try to free it first, then claim it again
                 logger.warning(
@@ -149,7 +149,7 @@ def set_pwm(pin: int, duty: int):
             h_obj.tx_pwm(pin, FREQ, int(duty))
         else:
             lgpio.tx_pwm(h_obj, pin, FREQ, int(duty))
-    except (lgpio.error, Exception):
+    except Exception:
         # Handle already closed or invalid - ignore during shutdown
         _gpio_active = False
         return
@@ -169,8 +169,12 @@ def clear_pwm(pin: int):
     if not _gpio_active:
         return  # GPIO handle already closed, skip
     try:
-        lgpio.tx_pwm(h, pin, FREQ, 0)
-    except (lgpio.error, Exception):
+        h_obj = _get_gpio_handle()
+        if test_mode.is_test_mode_enabled():
+            h_obj.tx_pwm(pin, FREQ, 0)
+        else:
+            lgpio.tx_pwm(h_obj, pin, FREQ, 0)
+    except Exception:
         # Handle already closed or invalid - ignore during shutdown
         _gpio_active = False
         return
@@ -188,13 +192,21 @@ def brake_motor(pin1, pin2=None):
     if pin2 is not None:
         clear_pwm(pin2)
         try:
-            lgpio.gpio_write(h, pin2, 0)
-        except (lgpio.error, Exception):
+            h_obj = _get_gpio_handle()
+            if test_mode.is_test_mode_enabled():
+                h_obj.write(pin2, 0)
+            else:
+                lgpio.gpio_write(h_obj, pin2, 0)
+        except Exception:
             _gpio_active = False
             return
     try:
-        lgpio.gpio_write(h, pin1, 0)
-    except (lgpio.error, Exception):
+        h_obj = _get_gpio_handle()
+        if test_mode.is_test_mode_enabled():
+            h_obj.write(pin1, 0)
+        else:
+            lgpio.gpio_write(h_obj, pin1, 0)
+    except Exception:
         _gpio_active = False
         return
 
@@ -205,8 +217,12 @@ def run_motor_async(pwm_pin, low_pin=None, speed_percent=100, duration=0.3, brak
         return  # GPIO handle already closed, skip
     if low_pin is not None:
         try:
-            lgpio.gpio_write(h, low_pin, 0)
-        except (lgpio.error, Exception):
+            h_obj = _get_gpio_handle()
+            if test_mode.is_test_mode_enabled():
+                h_obj.write(low_pin, 0)
+            else:
+                lgpio.gpio_write(h_obj, low_pin, 0)
+        except Exception:
             _gpio_active = False
             return
     set_pwm(pwm_pin, int(speed_percent))
@@ -219,10 +235,12 @@ def run_motor_async(pwm_pin, low_pin=None, speed_percent=100, duration=0.3, brak
 
 # === Movement Functions (keep signatures/behavior) ===
 def move_mouth(speed_percent, duration, brake=False):
+    test_mode.log_motor_event("mouth", "async", speed_percent, duration, {"brake": brake})
     run_motor_async(MOUTH, GND_1, speed_percent, duration, brake)
 
 
 def stop_mouth():
+    test_mode.log_motor_event("mouth", "brake")
     brake_motor(MOUTH, GND_1)
 
 
@@ -237,8 +255,12 @@ def move_head(state="on"):
         # For 3-motor "new" layout, mate is hard GND so this is a no-op.
         if TAIL is not None:
             try:
-                lgpio.gpio_write(h, TAIL, 0)
-            except (lgpio.error, Exception):
+                h_obj = _get_gpio_handle()
+                if test_mode.is_test_mode_enabled():
+                    h_obj.write(TAIL, 0)
+                else:
+                    lgpio.gpio_write(h_obj, TAIL, 0)
+            except Exception:
                 _gpio_active = False
                 return
         set_pwm(HEAD, 80)
@@ -247,9 +269,11 @@ def move_head(state="on"):
 
     if state == "on":
         if not head_out:
+            test_mode.log_motor_event("head", "on")
             threading.Thread(target=_move_head_on, daemon=True).start()
             head_out = True
     else:
+        test_mode.log_motor_event("head", "off")
         # Brake both sides of shared bridge where relevant
         brake_motor(HEAD, TAIL)
         head_out = False
@@ -263,6 +287,7 @@ def move_tail(duration=0.2):
       - new    + classic(3): dedicated channel with mate tied to GND => mate = None
       - new    + modern(2):  shared bridge with HEAD => mate = HEAD
     """
+    test_mode.log_motor_event("tail", "async", 80, duration)
     if BILLY_PINS == "legacy":
         if USE_THIRD_MOTOR and TAIL is not None and GND_3 is not None:
             run_motor_async(TAIL, GND_3, speed_percent=80, duration=duration)
@@ -403,15 +428,23 @@ def _stop_channel(pin: int):
     mate = _mate_for(pin)
     clear_pwm(pin)
     try:
-        lgpio.gpio_write(h, pin, 0)
-    except (lgpio.error, Exception):
+        h_obj = _get_gpio_handle()
+        if test_mode.is_test_mode_enabled():
+            h_obj.write(pin, 0)
+        else:
+            lgpio.gpio_write(h_obj, pin, 0)
+    except Exception:
         _gpio_active = False
         return
     if mate is not None:
         clear_pwm(mate)
         try:
-            lgpio.gpio_write(h, mate, 0)
-        except (lgpio.error, Exception):
+            h_obj = _get_gpio_handle()
+            if test_mode.is_test_mode_enabled():
+                h_obj.write(mate, 0)
+            else:
+                lgpio.gpio_write(h_obj, mate, 0)
+        except Exception:
             _gpio_active = False
             return
 
@@ -422,9 +455,13 @@ def _pin_is_active(pin: int) -> bool:
         # If GPIO is inactive, only check PWM state
         return _pwm.get(pin, {}).get("duty", 0) > 0
     try:
-        if lgpio.gpio_read(h, pin) == 1:
-            return True
-    except (lgpio.error, Exception):
+        h_obj = _get_gpio_handle()
+        if test_mode.is_test_mode_enabled():
+            return h_obj.read(pin) == 1 or _pwm.get(pin, {}).get("duty", 0) > 0
+        else:
+            if lgpio is not None and lgpio.gpio_read(h_obj, pin) == 1:
+                return True
+    except Exception:
         # Handle might be closed, fall back to PWM state
         pass
     return _pwm.get(pin, {}).get("duty", 0) > 0
@@ -438,8 +475,12 @@ def stop_all_motors():
     for pin in motor_pins:
         clear_pwm(pin)
         try:
-            lgpio.gpio_write(h, pin, 0)
-        except (lgpio.error, Exception):
+            h_obj = _get_gpio_handle()
+            if test_mode.is_test_mode_enabled():
+                h_obj.write(pin, 0)
+            else:
+                lgpio.gpio_write(h_obj, pin, 0)
+        except Exception:
             # Handle already closed or invalid - ignore during shutdown
             _gpio_active = False
             return

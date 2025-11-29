@@ -327,7 +327,12 @@ def mic_gain():
     card_index = get_usb_capture_card_index()
     numid = get_mic_gain_numid(card_index)
     if card_index is None or numid is None:
-        return jsonify({"error": "Could not determine mic card or control ID"}), 500
+        # Not available on this platform (e.g., macOS) or no USB card found
+        return jsonify({
+            "error": "Mic gain control not available on this platform",
+            "info": "ALSA mixer controls (amixer) are only available on Linux systems",
+            "gain": None
+        }), 200
     if request.method == "GET":
         try:
             output = subprocess.check_output(
@@ -336,6 +341,12 @@ def mic_gain():
             match = re.search(r": values=(\d+)", output)
             gain = int(match.group(1)) if match else None
             return jsonify({"gain": gain})
+        except FileNotFoundError:
+            # amixer not available (macOS, etc.)
+            return jsonify({
+                "error": "amixer command not available on this platform",
+                "info": "ALSA mixer controls are only available on Linux systems"
+            }), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
     if request.method == "POST":
@@ -353,6 +364,12 @@ def mic_gain():
                 ])
                 return "OK"
             return jsonify({"error": "Mic gain must be between 0 and 16"}), 400
+        except FileNotFoundError:
+            # amixer not available (macOS, etc.)
+            return jsonify({
+                "error": "amixer command not available on this platform",
+                "info": "ALSA mixer controls are only available on Linux systems"
+            }), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
     return jsonify({"error": "Unsupported method"}), 405

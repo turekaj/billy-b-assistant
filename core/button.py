@@ -24,6 +24,7 @@ session_instance: BillySession | None = None
 last_button_time = 0
 button_debounce_delay = 0.5  # seconds debounce
 _session_start_lock = threading.Lock()  # Lock to prevent concurrent session starts
+explicit_stop_requested = False  # Flag for explicit session stop on 2nd button press
 
 # Setup hardware button (deferred to start_loop)
 button = None
@@ -42,7 +43,8 @@ def on_button():
         session_thread, \
         interrupt_event, \
         session_instance, \
-        last_button_time
+        last_button_time, \
+        explicit_stop_requested
 
     now = time.time()
     if now - last_button_time < button_debounce_delay:
@@ -53,40 +55,48 @@ def on_button():
         return
 
     if is_active:
-        logger.info("Button pressed during active session.", "🔁")
-        interrupt_event.set()
-        audio.stop_playback()
+        # First button press during session: keep listening (don't stop immediately)
+        # Second button press: explicitly stop the session
+        if explicit_stop_requested:
+            logger.info("Second button press - stopping active session.", "🔁")
+            interrupt_event.set()
+            audio.stop_playback()
+            explicit_stop_requested = False
 
-        if session_instance:
-            try:
-                logger.info("Stopping active session...", "🛑")
-                # A concurrent.futures.CancelledError is expected here, because the last
-                # thing that BillySession.stop_session does is `await asyncio.sleep`,
-                # and that will raise CancelledError because it's a logical place to
-                # stop.
-                with contextlib.suppress(CancelledError):
-                    future = asyncio.run_coroutine_threadsafe(
-                        session_instance.stop_session(), session_instance.loop
-                    )
-                    # Add timeout to prevent hanging
-                    try:
-                        future.result(timeout=5.0)  # Wait up to 5 seconds
-                        logger.success("Session stopped.")
-                    except TimeoutError:
-                        logger.warning("Session stop timeout, forcing cleanup")
-                        future.cancel()
-            except Exception as e:
-                logger.warning(f"Error stopping session ({type(e)}): {e}")
-            finally:
-                # Always ensure cleanup
-                session_instance = None
-                # Wait for session thread to finish to ensure mic is fully closed
-                if session_thread and session_thread.is_alive():
-                    logger.info("Waiting for session thread to finish...", "⏳")
-                    session_thread.join(timeout=2.0)
-                    if session_thread.is_alive():
-                        logger.warning("Session thread did not finish in time", "⚠️")
-        is_active = False  # ✅ Ensure this is always set after stopping
+            if session_instance:
+                try:
+                    logger.info("Stopping active session...", "🛑")
+                    # A concurrent.futures.CancelledError is expected here, because the last
+                    # thing that BillySession.stop_session does is `await asyncio.sleep`,
+                    # and that will raise CancelledError because it's a logical place to
+                    # stop.
+                    with contextlib.suppress(CancelledError):
+                        future = asyncio.run_coroutine_threadsafe(
+                            session_instance.stop_session(), session_instance.loop
+                        )
+                        # Add timeout to prevent hanging
+                        try:
+                            future.result(timeout=5.0)  # Wait up to 5 seconds
+                            logger.success("Session stopped.")
+                        except TimeoutError:
+                            logger.warning("Session stop timeout, forcing cleanup")
+                            future.cancel()
+                except Exception as e:
+                    logger.warning(f"Error stopping session ({type(e)}): {e}")
+                finally:
+                    # Always ensure cleanup
+                    session_instance = None
+                    # Wait for session thread to finish to ensure mic is fully closed
+                    if session_thread and session_thread.is_alive():
+                        logger.info("Waiting for session thread to finish...", "⏳")
+                        session_thread.join(timeout=2.0)
+                        if session_thread.is_alive():
+                            logger.warning("Session thread did not finish in time", "⚠️")
+            is_active = False  # ✅ Ensure this is always set after stopping
+        else:
+            # First press: set flag to expect explicit stop on next press
+            logger.info("Button pressed during active session. Press again to stop.", "🔁")
+            explicit_stop_requested = True
         return
 
     # Use lock to prevent concurrent session starts (but allow interruption above)
@@ -116,7 +126,7 @@ def on_button():
         logger.info("Button pressed. Listening...", "🎤")
 
         def run_session():
-            global session_instance, is_active
+            global session_instance, is_active, explicit_stop_requested
             try:
                 move_head("on")
                 session_instance = BillySession(interrupt_event=interrupt_event)
@@ -128,6 +138,7 @@ def on_button():
                 move_head("off")
                 is_active = False
                 session_instance = None  # Clear reference
+                explicit_stop_requested = False  # Reset flag for next session
                 logger.info("Waiting for button press...", "🕐")
                 # Release lock when session finishes
                 with contextlib.suppress(Exception):
@@ -146,6 +157,7 @@ def on_button():
 def _get_button():
     """Get button instance (real or mock depending on test mode)."""
     if test_mode.is_test_mode_enabled():
+        logger.info("Using mock button (test mode)", "🧪")
         return test_mode.mock_button
     if Button is None:
         raise RuntimeError(
@@ -160,6 +172,12 @@ def start_loop():
     audio.detect_devices(debug=config.DEBUG_MODE)
     button = _get_button()
     button.when_pressed = on_button
+
+    # Register virtual button handler for test mode
+    if test_mode.is_test_mode_enabled():
+        test_mode.register_virtual_button_handler(on_button)
+        logger.info("Test mode enabled - virtual button handler registered", "🧪")
+
     logger.info(
         "Ready. Press button to start a voice session. Press Ctrl+C to quit.", "🎦"
     )

@@ -1,4 +1,5 @@
 import asyncio
+import os
 import shutil
 import signal
 import sys
@@ -38,7 +39,7 @@ load_dotenv()
 from pathlib import Path
 
 import core.button
-from core.audio import playback_queue
+from core.audio import playback_queue, detect_devices
 
 # --- Reload logger level after environment is loaded ---
 from core.logger import reload_log_level
@@ -66,6 +67,15 @@ main_event_loop = asyncio.get_event_loop()
 def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+
+    # Detect audio devices early so MIC_DEVICE_INDEX and channels are set before sessions start
+    detect_devices()
+
+    # Enable test mode if TEST_MODE environment variable is set
+    if os.getenv("TEST_MODE", "").lower() == "true":
+        from core import test_mode
+        test_mode.enable_test_mode()
+        logger.info("Test mode enabled via TEST_MODE environment variable", "🧪")
 
     # Load default user profile BEFORE starting button loop
     # This ensures the persona manager is set to the correct persona before any sessions start

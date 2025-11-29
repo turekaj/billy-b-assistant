@@ -89,6 +89,10 @@ _TEST_MODE_ENABLED = False
 _motor_log: List[MotorEvent] = []
 _motor_log_lock = threading.Lock()
 
+# Global mock instances
+mock_gpio_handle = MockGPIOHandle()
+mock_button = MockButton(pin=None)
+
 
 def enable_test_mode() -> None:
     """Enable test mode, disabling GPIO hardware access."""
@@ -182,17 +186,26 @@ def register_virtual_button_handler(handler: Callable) -> None:
 
 def trigger_virtual_button() -> None:
     """Simulate a button press (for testing via web UI or CLI)."""
-    for handler in _virtual_button_handlers:
-        try:
-            handler()
-        except Exception:
-            pass
+    # Use the mock button's trigger_press() method to properly set is_pressed state
+    # This ensures handlers see button.is_pressed=True during execution
+    mock_button.trigger_press()
 
 
 def get_test_status() -> dict:
     """Get current test mode status."""
-    return {
+    status = {
         "test_mode_enabled": _TEST_MODE_ENABLED,
         "motor_events_count": len(get_motor_log()),
         "button_handlers_registered": len(_virtual_button_handlers),
     }
+
+    # Add audio test status if available
+    try:
+        from . import test_audio
+        if _TEST_MODE_ENABLED:
+            audio_status = test_audio.get_test_audio_status()
+            status["audio"] = audio_status
+    except Exception:
+        pass
+
+    return status

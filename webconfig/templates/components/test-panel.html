@@ -1,0 +1,385 @@
+<!-- Test Mode Panel -->
+<div id="test-mode-section" class="hidden">
+    <div class="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4 mb-4">
+        <h2 class="text-2xl font-bold text-yellow-800 mb-4">
+            🧪 Test Mode
+        </h2>
+
+        <div class="space-y-4">
+            <!-- Status Box -->
+            <div class="bg-white rounded p-3 border border-yellow-300">
+                <h3 class="font-semibold text-yellow-700 mb-2">Status</h3>
+                <p id="test-mode-status" class="text-sm text-gray-700">
+                    Checking...
+                </p>
+            </div>
+
+            <!-- Virtual Button -->
+            <div class="bg-white rounded p-3 border border-yellow-300">
+                <h3 class="font-semibold text-yellow-700 mb-2">Virtual Button</h3>
+                <button
+                    id="virtual-button"
+                    class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded text-lg transition"
+                    onclick="testPanel.triggerVirtualButton()"
+                >
+                    🎤 Press Virtual Button
+                </button>
+                <p class="text-xs text-gray-500 mt-2">
+                    Simulates pressing the physical button on the fish
+                </p>
+            </div>
+
+            <!-- Motor Log -->
+            <div class="bg-white rounded p-3 border border-yellow-300">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="font-semibold text-yellow-700">Motor Log</h3>
+                    <span id="motor-log-count" class="text-xs bg-yellow-100 px-2 py-1 rounded">
+                        0 events
+                    </span>
+                </div>
+                <div id="motor-log-display" class="bg-gray-50 border border-gray-300 rounded p-2 font-mono text-xs h-40 overflow-y-auto mb-2">
+                    <p class="text-gray-500">No motor events logged yet</p>
+                </div>
+                <div class="flex gap-2">
+                    <button
+                        class="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded text-sm transition"
+                        onclick="testPanel.refreshMotorLog()"
+                    >
+                        🔄 Refresh
+                    </button>
+                    <button
+                        class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded text-sm transition"
+                        onclick="testPanel.clearMotorLog()"
+                    >
+                        🗑️ Clear
+                    </button>
+                    <button
+                        class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-3 rounded text-sm transition"
+                        onclick="testPanel.downloadMotorLog()"
+                    >
+                        💾 Download
+                    </button>
+                </div>
+            </div>
+
+            <!-- Audio Testing -->
+            <div class="bg-white rounded p-3 border border-yellow-300">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="font-semibold text-yellow-700">Audio Status</h3>
+                    <span id="audio-status-indicator" class="text-xs bg-gray-200 px-2 py-1 rounded">
+                        Loading...
+                    </span>
+                </div>
+                <div id="audio-status-display" class="bg-gray-50 border border-gray-300 rounded p-2 text-xs space-y-1 mb-2 max-h-32 overflow-y-auto">
+                    <p class="text-gray-500">Checking audio status...</p>
+                </div>
+                <button
+                    class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded text-sm transition"
+                    onclick="testPanel.refreshAudioStatus()"
+                >
+                    🔄 Refresh Audio Status
+                </button>
+            </div>
+
+            <!-- Captured Audio -->
+            <div class="bg-white rounded p-3 border border-yellow-300">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="font-semibold text-yellow-700">Captured Audio</h3>
+                    <span id="audio-chunks-count" class="text-xs bg-yellow-100 px-2 py-1 rounded">
+                        0 chunks
+                    </span>
+                </div>
+                <div id="audio-chunks-display" class="bg-gray-50 border border-gray-300 rounded p-2 font-mono text-xs h-32 overflow-y-auto mb-2">
+                    <p class="text-gray-500">No audio captured yet</p>
+                </div>
+                <button
+                    class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded text-sm transition"
+                    onclick="testPanel.clearAudioChunks()"
+                >
+                    🗑️ Clear Audio Log
+                </button>
+            </div>
+
+            <!-- API Messages -->
+            <div class="bg-white rounded p-3 border border-yellow-300">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="font-semibold text-yellow-700">API Messages</h3>
+                    <span id="api-messages-count" class="text-xs bg-yellow-100 px-2 py-1 rounded">
+                        0 messages
+                    </span>
+                </div>
+                <div id="api-messages-display" class="bg-gray-50 border border-gray-300 rounded p-2 font-mono text-xs h-32 overflow-y-auto mb-2">
+                    <p class="text-gray-500">No API messages yet</p>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="bg-blue-50 border border-blue-200 rounded p-3">
+                <h4 class="font-semibold text-blue-700 mb-2">How to Use Test Mode</h4>
+                <ol class="text-sm text-blue-900 space-y-1 list-decimal list-inside">
+                    <li>Press the virtual button to simulate button presses</li>
+                    <li>Billy will listen to your voice and respond</li>
+                    <li>Watch motor log to see movements during interaction</li>
+                    <li>View audio status to monitor microphone and speaker</li>
+                    <li>Download logs for analysis and testing</li>
+                    <li>Clear logs between test runs</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const testPanel = {
+    async checkTestMode() {
+        try {
+            const response = await fetch('/test/status');
+            const data = await response.json();
+
+            if (data.test_mode_enabled) {
+                document.getElementById('test-mode-section').classList.remove('hidden');
+                this.updateStatus(data);
+                this.refreshMotorLog();
+            }
+        } catch (error) {
+            console.log('Test mode not available:', error);
+        }
+    },
+
+    updateStatus(data) {
+        const statusEl = document.getElementById('test-mode-status');
+        statusEl.innerHTML = `
+            <div class="space-y-1">
+                <p><strong>Test Mode:</strong> Enabled ✅</p>
+                <p><strong>Motor Events:</strong> ${data.motor_events_count}</p>
+                <p><strong>Button Handlers:</strong> ${data.button_handlers_registered}</p>
+            </div>
+        `;
+    },
+
+    async triggerVirtualButton() {
+        const btn = document.getElementById('virtual-button');
+        btn.disabled = true;
+        btn.textContent = '⏳ Button pressed...';
+
+        try {
+            const response = await fetch('/test/button', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+                console.log('Virtual button triggered');
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.textContent = '🎤 Press Virtual Button';
+                    this.refreshMotorLog();
+                }, 1000);
+            } else {
+                alert('Failed to trigger button');
+                btn.disabled = false;
+                btn.textContent = '🎤 Press Virtual Button';
+            }
+        } catch (error) {
+            console.error('Error triggering button:', error);
+            alert('Error: ' + error.message);
+            btn.disabled = false;
+            btn.textContent = '🎤 Press Virtual Button';
+        }
+    },
+
+    async refreshMotorLog() {
+        try {
+            const response = await fetch('/test/motor-log');
+            const data = await response.json();
+
+            if (data.motor_events) {
+                this.displayMotorLog(data.motor_events);
+                document.getElementById('motor-log-count').textContent =
+                    `${data.count} event${data.count !== 1 ? 's' : ''}`;
+            }
+        } catch (error) {
+            console.error('Error fetching motor log:', error);
+        }
+    },
+
+    displayMotorLog(events) {
+        const logDisplay = document.getElementById('motor-log-display');
+
+        if (events.length === 0) {
+            logDisplay.innerHTML = '<p class="text-gray-500">No motor events logged yet</p>';
+            return;
+        }
+
+        const lines = events.map(event => {
+            const time = new Date(event.timestamp * 1000).toLocaleTimeString();
+            const action = event.action.toUpperCase().padEnd(8);
+            const motor = event.motor.toUpperCase().padEnd(6);
+
+            if (event.speed_percent > 0) {
+                return `[${time}] ${motor} ${action} speed=${event.speed_percent}% dur=${event.duration.toFixed(2)}s`;
+            } else {
+                return `[${time}] ${motor} ${action} dur=${event.duration.toFixed(2)}s`;
+            }
+        });
+
+        logDisplay.innerHTML = lines
+            .map(line => `<div class="text-gray-700">${line}</div>`)
+            .join('');
+
+        // Auto-scroll to bottom
+        logDisplay.scrollTop = logDisplay.scrollHeight;
+    },
+
+    async clearMotorLog() {
+        if (!confirm('Clear all motor log events?')) return;
+
+        try {
+            const response = await fetch('/test/motor-log/clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+                document.getElementById('motor-log-display').innerHTML =
+                    '<p class="text-gray-500">No motor events logged yet</p>';
+                document.getElementById('motor-log-count').textContent = '0 events';
+            }
+        } catch (error) {
+            console.error('Error clearing log:', error);
+            alert('Error: ' + error.message);
+        }
+    },
+
+    async downloadMotorLog() {
+        try {
+            const response = await fetch('/test/motor-log/download');
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `motor_log_${new Date().toISOString().slice(0, 19)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (error) {
+            console.error('Error downloading log:', error);
+            alert('Error: ' + error.message);
+        }
+    },
+
+    async refreshAudioStatus() {
+        try {
+            const response = await fetch('/test/audio/status');
+            if (response.ok) {
+                const data = await response.json();
+                this.updateAudioStatus(data);
+                this.refreshAudioChunks();
+                this.refreshApiMessages();
+            }
+        } catch (error) {
+            console.error('Error refreshing audio status:', error);
+        }
+    },
+
+    updateAudioStatus(data) {
+        const display = document.getElementById('audio-status-display');
+        const indicator = document.getElementById('audio-status-indicator');
+
+        const lines = [
+            `<p><strong>Mic Running:</strong> ${data.mic_running ? '✅ Yes' : '❌ No'}</p>`,
+            `<p><strong>WebSocket:</strong> ${data.websocket_connected ? '✅ Connected' : '❌ Disconnected'}</p>`,
+            `<p><strong>API Messages Sent:</strong> ${data.audio_chunks_sent_to_api}</p>`,
+            `<p><strong>Audio Chunks Captured:</strong> ${data.audio_chunks_captured}</p>`,
+            `<p><strong>Total Duration:</strong> ${data.total_captured_duration.toFixed(2)}s</p>`
+        ];
+
+        display.innerHTML = lines.join('');
+
+        const status = data.mic_running ? 'Active ✅' : 'Idle ⏸️';
+        indicator.textContent = status;
+        indicator.className = data.mic_running
+            ? 'text-xs bg-green-100 text-green-800 px-2 py-1 rounded'
+            : 'text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded';
+    },
+
+    async refreshAudioChunks() {
+        try {
+            const response = await fetch('/test/audio/captured');
+            if (response.ok) {
+                const data = await response.json();
+                const display = document.getElementById('audio-chunks-display');
+                const countBadge = document.getElementById('audio-chunks-count');
+
+                if (data.chunks.length === 0) {
+                    display.innerHTML = '<p class="text-gray-500">No audio captured yet</p>';
+                } else {
+                    const lines = data.chunks.map(chunk => {
+                        return `<div class="text-gray-700">Chunk: ${chunk.duration.toFixed(3)}s @ ${chunk.sample_rate}Hz (${chunk.channels}ch) - ${chunk.size_bytes} bytes</div>`;
+                    });
+                    display.innerHTML = lines.join('');
+                }
+
+                countBadge.textContent = `${data.chunks_count} chunk${data.chunks_count !== 1 ? 's' : ''}`;
+            }
+        } catch (error) {
+            console.error('Error refreshing audio chunks:', error);
+        }
+    },
+
+    async refreshApiMessages() {
+        try {
+            const response = await fetch('/test/audio/api-messages');
+            if (response.ok) {
+                const data = await response.json();
+                const display = document.getElementById('api-messages-display');
+                const countBadge = document.getElementById('api-messages-count');
+
+                if (data.messages.length === 0) {
+                    display.innerHTML = '<p class="text-gray-500">No API messages yet</p>';
+                } else {
+                    const lines = data.messages.slice(0, 10).map(msg => {
+                        const msgType = msg.type || 'unknown';
+                        return `<div class="text-gray-700">${msgType}</div>`;
+                    });
+                    display.innerHTML = lines.join('');
+                }
+
+                countBadge.textContent = `${data.total_messages} message${data.total_messages !== 1 ? 's' : ''}`;
+            }
+        } catch (error) {
+            console.error('Error refreshing API messages:', error);
+        }
+    },
+
+    async clearAudioChunks() {
+        if (!confirm('Clear captured audio log?')) return;
+
+        try {
+            const response = await fetch('/test/audio/captured/clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+                document.getElementById('audio-chunks-display').innerHTML =
+                    '<p class="text-gray-500">No audio captured yet</p>';
+                document.getElementById('audio-chunks-count').textContent = '0 chunks';
+            }
+        } catch (error) {
+            console.error('Error clearing audio chunks:', error);
+            alert('Error: ' + error.message);
+        }
+    }
+};
+
+// Check for test mode on page load
+document.addEventListener('DOMContentLoaded', () => {
+    testPanel.checkTestMode();
+    // Refresh status every 2 seconds
+    setInterval(() => testPanel.checkTestMode(), 2000);
+    // Also refresh audio status more frequently
+    setInterval(() => testPanel.refreshAudioStatus(), 1000);
+});
+</script>

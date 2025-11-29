@@ -407,6 +407,8 @@ class BillySession:
         self.user_spoke_after_assistant = False
         self.allow_mic_input = True
         self.interrupt_event = interrupt_event or asyncio.Event()
+
+        # Always use real microphone (test mode mocks other things like motors and API)
         self.mic = MicManager()
         self.mic_running = False
         self.mic_timeout_task: asyncio.Task | None = None
@@ -881,6 +883,7 @@ class BillySession:
         try:
             # Recreate the manager in case the previous stream left it in a bad state
             if self.mic is None:
+                # Always use real microphone
                 self.mic = MicManager()
 
             self.mic.start(self.mic_callback)
@@ -925,6 +928,7 @@ class BillySession:
 
             # Recreate MicManager to clear any stale PortAudio handles
             try:
+                # Always use real microphone
                 self.mic = MicManager()
             except Exception as e:
                 logger.warning(f"MicManager recreate failed: {e}")

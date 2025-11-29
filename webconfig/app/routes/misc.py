@@ -11,18 +11,32 @@ bp = Blueprint("misc", __name__)
 @bp.route("/logs")
 def logs():
     try:
-        output = subprocess.check_output([
-            "journalctl",
-            "-u",
-            "billy.service",
-            "-n",
-            "100",
-            "--no-pager",
-            "--output=short",
-        ])
-        return jsonify({"logs": output.decode("utf-8")})
+        # Check if we're on a system that has journalctl (Linux with systemd)
+        # macOS and other systems won't have this
+        try:
+            output = subprocess.check_output([
+                "journalctl",
+                "-u",
+                "billy.service",
+                "-n",
+                "100",
+                "--no-pager",
+                "--output=short",
+            ])
+            return jsonify({"logs": output.decode("utf-8")})
+        except FileNotFoundError:
+            # journalctl not available (macOS, etc.)
+            return jsonify({
+                "logs": "System logs not available on this platform",
+                "info": "journalctl is only available on Linux systems with systemd"
+            }), 200
     except subprocess.CalledProcessError as e:
         return jsonify({"logs": "Failed to retrieve logs", "error": str(e)}), 500
+    except Exception as e:
+        return jsonify({
+            "logs": "Error retrieving logs",
+            "error": str(e)
+        }), 500
 
 
 @bp.route("/service/<action>")
@@ -72,11 +86,19 @@ def stop_billy_only():
 @bp.route("/service/status")
 def service_status():
     try:
-        # Get service status
-        output = subprocess.check_output(
-            ["systemctl", "is-active", "billy.service"], stderr=subprocess.STDOUT
-        )
-        service_status = output.decode("utf-8").strip()
+        # Try to get service status (Linux only - systemctl)
+        try:
+            output = subprocess.check_output(
+                ["systemctl", "is-active", "billy.service"], stderr=subprocess.STDOUT
+            )
+            service_status = output.decode("utf-8").strip()
+        except FileNotFoundError:
+            # systemctl not available (macOS, etc.) - return unavailable status
+            return jsonify({
+                "status": "unavailable",
+                "info": "Service status monitoring not available on this platform",
+                "platform_note": "systemctl is only available on Linux systems"
+            }), 200
 
         # Get comprehensive status including profiles and configuration
         try:
