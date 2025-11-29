@@ -1,7 +1,7 @@
 """Unit tests for test_mode module."""
 
 import pytest
-from core.test_mode import MockGPIOHandle, MockButton
+from core.test_mode import MockGPIOHandle, MockButton, MotorEvent
 
 
 class TestMockGPIOHandle:
@@ -85,3 +85,40 @@ class TestMockButton:
         """Test triggering press without handler doesn't crash."""
         self.button.when_pressed = None
         self.button.trigger_press()  # Should not raise
+
+
+class TestMotorEvent:
+    """Tests for MotorEvent dataclass."""
+
+    def test_motor_event_creation(self):
+        """Test creating a motor event."""
+        event = MotorEvent(
+            timestamp=1000.0,
+            motor="mouth",
+            action="async",
+            speed_percent=75,
+            duration=0.5
+        )
+        assert event.motor == "mouth"
+        assert event.action == "async"
+        assert event.speed_percent == 75
+        assert event.duration == 0.5
+
+    def test_motor_event_to_dict(self):
+        """Test converting motor event to dict."""
+        event = MotorEvent(
+            timestamp=1000.0,
+            motor="head",
+            action="on",
+            speed_percent=80,
+            duration=0.0,
+            details={"phase": "extend"}
+        )
+        event_dict = event.to_dict()
+
+        assert event_dict["motor"] == "head"
+        assert event_dict["action"] == "on"
+        assert event_dict["speed_percent"] == 80
+        assert event_dict["duration"] == 0.0
+        assert event_dict["details"]["phase"] == "extend"
+        assert "datetime" in event_dict

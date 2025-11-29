@@ -1,6 +1,9 @@
 """Test mode support for billy-b-assistant - GPU mocking."""
 
+import time
 from typing import Dict, Callable, Optional
+from dataclasses import dataclass, field
+from datetime import datetime
 
 
 class MockGPIOHandle:
@@ -56,3 +59,25 @@ class MockButton:
         if self.when_pressed:
             self.when_pressed()
         self.is_pressed = False
+
+
+@dataclass
+class MotorEvent:
+    """Record of a motor movement event."""
+    timestamp: float
+    motor: str  # "mouth", "head", "tail"
+    action: str  # "on", "off", "brake", "pwm", "async"
+    speed_percent: int = 0
+    duration: float = 0.0
+    details: dict = field(default_factory=dict)
+
+    def to_dict(self):
+        return {
+            "timestamp": self.timestamp,
+            "datetime": datetime.fromtimestamp(self.timestamp).isoformat(),
+            "motor": self.motor,
+            "action": self.action,
+            "speed_percent": self.speed_percent,
+            "duration": self.duration,
+            "details": self.details,
+        }
