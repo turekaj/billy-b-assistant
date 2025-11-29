@@ -1,7 +1,8 @@
 """Test mode support for billy-b-assistant - GPU mocking."""
 
 import time
-from typing import Dict, Callable, Optional
+import threading
+from typing import Dict, Callable, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -81,3 +82,52 @@ class MotorEvent:
             "duration": self.duration,
             "details": self.details,
         }
+
+
+# Global test mode state
+_TEST_MODE_ENABLED = False
+_motor_log: List[MotorEvent] = []
+_motor_log_lock = threading.Lock()
+
+
+def enable_test_mode() -> None:
+    """Enable test mode, disabling GPIO hardware access."""
+    global _TEST_MODE_ENABLED
+    _TEST_MODE_ENABLED = True
+
+
+def is_test_mode_enabled() -> bool:
+    """Check if test mode is currently enabled."""
+    return _TEST_MODE_ENABLED
+
+
+def log_motor_event(motor: str, action: str, speed_percent: int = 0,
+                   duration: float = 0.0, details: dict = None) -> None:
+    """Log a motor movement event."""
+    if not _TEST_MODE_ENABLED:
+        return
+
+    event = MotorEvent(
+        timestamp=time.time(),
+        motor=motor,
+        action=action,
+        speed_percent=speed_percent,
+        duration=duration,
+        details=details or {}
+    )
+
+    with _motor_log_lock:
+        _motor_log.append(event)
+
+
+def get_motor_log() -> List[dict]:
+    """Get all logged motor events as dicts."""
+    with _motor_log_lock:
+        return [event.to_dict() for event in _motor_log]
+
+
+def clear_motor_log() -> None:
+    """Clear all logged motor events."""
+    global _motor_log
+    with _motor_log_lock:
+        _motor_log.clear()

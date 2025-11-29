@@ -1,6 +1,8 @@
 """Unit tests for test_mode module."""
 
 import pytest
+import time
+from core import test_mode
 from core.test_mode import MockGPIOHandle, MockButton, MotorEvent
 
 
@@ -122,3 +124,70 @@ class TestMotorEvent:
         assert event_dict["duration"] == 0.0
         assert event_dict["details"]["phase"] == "extend"
         assert "datetime" in event_dict
+
+
+class TestLoggingFunctions:
+    """Tests for motor logging functions."""
+
+    def setup_method(self):
+        """Reset test mode before each test."""
+        test_mode._TEST_MODE_ENABLED = False
+        test_mode.clear_motor_log()
+
+    def test_enable_test_mode(self):
+        """Test enabling test mode."""
+        assert not test_mode.is_test_mode_enabled()
+        test_mode.enable_test_mode()
+        assert test_mode.is_test_mode_enabled()
+
+    def test_log_motor_event(self):
+        """Test logging motor events."""
+        test_mode.enable_test_mode()
+        test_mode.log_motor_event("mouth", "async", speed_percent=75, duration=0.5)
+
+        log = test_mode.get_motor_log()
+        assert len(log) == 1
+        assert log[0]["motor"] == "mouth"
+        assert log[0]["action"] == "async"
+        assert log[0]["speed_percent"] == 75
+
+    def test_log_without_test_mode(self):
+        """Test that logging is skipped when test mode is off."""
+        test_mode.log_motor_event("mouth", "async")
+        log = test_mode.get_motor_log()
+        assert len(log) == 0
+
+    def test_clear_motor_log(self):
+        """Test clearing motor log."""
+        test_mode.enable_test_mode()
+        test_mode.log_motor_event("mouth", "async")
+        test_mode.log_motor_event("head", "on")
+
+        assert len(test_mode.get_motor_log()) == 2
+        test_mode.clear_motor_log()
+        assert len(test_mode.get_motor_log()) == 0
+
+    def test_motor_log_timestamps(self):
+        """Test that motor events have proper timestamps."""
+        test_mode.enable_test_mode()
+
+        before = time.time()
+        test_mode.log_motor_event("mouth", "async")
+        after = time.time()
+
+        log = test_mode.get_motor_log()
+        assert before <= log[0]["timestamp"] <= after
+
+    def test_multiple_motor_events(self):
+        """Test logging multiple motor events."""
+        test_mode.enable_test_mode()
+
+        test_mode.log_motor_event("mouth", "async", speed_percent=50, duration=0.2)
+        test_mode.log_motor_event("head", "on", speed_percent=80, duration=0.5)
+        test_mode.log_motor_event("tail", "async", speed_percent=80, duration=0.2)
+
+        log = test_mode.get_motor_log()
+        assert len(log) == 3
+        assert log[0]["motor"] == "mouth"
+        assert log[1]["motor"] == "head"
+        assert log[2]["motor"] == "tail"
