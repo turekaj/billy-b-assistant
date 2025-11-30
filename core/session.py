@@ -1097,13 +1097,27 @@ class BillySession:
             # For OpenAI Realtime, send complete session config including VAD
             # Other providers can use update_session() for simpler config
             if hasattr(self.provider, 'ws') and self.provider.ws:
+                # Convert tools to OpenAI Realtime format
+                tools_raw = get_tools_for_current_mode()
+                tools_openai = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool["name"],
+                            "description": tool["description"],
+                            "parameters": tool["parameters"],
+                        },
+                    }
+                    for tool in tools_raw
+                ]
+
                 # Send full OpenAI Realtime session configuration
                 session_update = {
                     "type": "session.update",
                     "session": {
                         "type": "realtime",
                         "instructions": get_instructions_with_user_context(),
-                        "tools": get_tools_for_current_mode(),
+                        "tools": tools_openai,
                         "audio": {
                             "input": {
                                 "format": {"type": "audio/pcm", "rate": 24000},
