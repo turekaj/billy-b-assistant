@@ -14,6 +14,7 @@ from . import audio, config, test_mode
 from .logger import logger
 from .movements import move_head
 from .session import BillySession
+from .providers.factory import ProviderFactory
 
 
 # Button and session globals
@@ -129,7 +130,18 @@ def on_button():
             global session_instance, is_active, explicit_stop_requested
             try:
                 move_head("on")
-                session_instance = BillySession(interrupt_event=interrupt_event)
+                # Create AI provider based on config
+                provider = ProviderFactory.create_ai_provider(
+                    provider_name=config.AI_PROVIDER,
+                    openai_api_key=config.OPENAI_API_KEY,
+                    openai_model=config.OPENAI_MODEL,
+                    grok_api_key=config.GROK_API_KEY,
+                    grok_model=config.GROK_MODEL,
+                )
+                session_instance = BillySession(
+                    provider=provider,
+                    interrupt_event=interrupt_event
+                )
                 session_instance.last_activity[0] = time.time()
                 asyncio.run(session_instance.start())
             except Exception as e:
