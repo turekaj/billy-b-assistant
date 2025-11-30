@@ -1248,7 +1248,9 @@ class BillySession:
                 await self.handle_event(event)
 
         except Exception as e:
-            logger.error(f"Error opening mic input: {e}")
+            import traceback
+            logger.error(f"Error in run_stream: {type(e).__name__}: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             self.session_active.clear()
 
         finally:

@@ -172,7 +172,11 @@ def playback_worker(chunk_ms):
                             next_beat_time += beat_length
 
                         mono = np.frombuffer(audio_chunk, dtype=np.int16)
-                        stream.write(_resample_24k_mono_to_48k_stereo(mono))
+                        try:
+                            stream.write(_resample_24k_mono_to_48k_stereo(mono))
+                        except Exception as write_err:
+                            logger.error(f"Failed to write audio chunk (mode=audio): {type(write_err).__name__}: {write_err}")
+                            raise
 
                     elif mode == "tts":
                         chunk = item[1]
@@ -183,7 +187,11 @@ def playback_worker(chunk_ms):
                             if len(sub) == 0:
                                 continue
                             flap_from_pcm_chunk(sub, chunk_ms=chunk_ms)
-                            stream.write(_resample_24k_mono_to_48k_stereo(sub))
+                            try:
+                                stream.write(_resample_24k_mono_to_48k_stereo(sub))
+                            except Exception as write_err:
+                                logger.error(f"Failed to write audio chunk (mode=tts): {type(write_err).__name__}: {write_err}")
+                                raise
 
                             interlude_counter += len(sub)
                             interlude_counter, interlude_target = (
@@ -204,7 +212,11 @@ def playback_worker(chunk_ms):
                         api_audio_buffer = api_audio_buffer[target_buffer_size:]
 
                         flap_from_pcm_chunk(to_process, chunk_ms=chunk_ms)
-                        stream.write(_resample_24k_mono_to_48k_stereo(to_process))
+                        try:
+                            stream.write(_resample_24k_mono_to_48k_stereo(to_process))
+                        except Exception as write_err:
+                            logger.error(f"Failed to write audio chunk (buffered API): {type(write_err).__name__}: {write_err}")
+                            raise
 
                         interlude_counter += len(to_process)
                         interlude_counter, interlude_target = _maybe_trigger_interlude(
@@ -214,7 +226,11 @@ def playback_worker(chunk_ms):
                     # Flush remaining buffer if this is the last chunk (empty item indicates end)
                     if len(api_audio_buffer) > 0 and len(chunk_mono) == 0:
                         flap_from_pcm_chunk(api_audio_buffer, chunk_ms=chunk_ms)
-                        stream.write(_resample_24k_mono_to_48k_stereo(api_audio_buffer))
+                        try:
+                            stream.write(_resample_24k_mono_to_48k_stereo(api_audio_buffer))
+                        except Exception as write_err:
+                            logger.error(f"Failed to write audio chunk (flush buffer): {type(write_err).__name__}: {write_err}")
+                            raise
                         api_audio_buffer = np.array([], dtype=np.int16)
 
                 playback_queue.task_done()
@@ -665,7 +681,15 @@ def _resample_24k_mono_to_48k_stereo(mono: np.ndarray) -> np.ndarray:
         stereo = soft_clipped[:, np.newaxis]
 
     # Final hard clip as safety measure, then convert to int16
-    return np.clip(stereo, -32768, 32767).astype(np.int16)
+    audio_int16 = np.clip(stereo, -32768, 32767).astype(np.int16)
+
+    # Ensure C-contiguous array for PyAudio compatibility
+    if not audio_int16.flags['C_CONTIGUOUS']:
+        audio_int16 = np.ascontiguousarray(audio_int16)
+
+    # Flatten to 1D for PyAudio (interleaved stereo format)
+    # This ensures buffer size is always a multiple of element size
+    return audio_int16.flatten()
 
 
 def _maybe_trigger_interlude(
