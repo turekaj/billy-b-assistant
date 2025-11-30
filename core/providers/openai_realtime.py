@@ -33,18 +33,23 @@ class OpenAIRealtimeProvider(AIProvider):
 
     async def initialize(self) -> None:
         """Connect to OpenAI Realtime API and start background message processing."""
+        from core.logger import logger
         uri = f"wss://api.openai.com/v1/realtime?model={self.model}"
         headers = {"Authorization": f"Bearer {self.api_key}"}
+        logger.info(f"Connecting to OpenAI Realtime: {uri}", "🔌")
         self.ws = await websockets.asyncio.client.connect(uri, additional_headers=headers)
+        logger.success("Connected to OpenAI Realtime WebSocket", "✅")
 
         # Start background task to read and process WebSocket messages
         self._ws_read_task = asyncio.create_task(self._process_ws_messages())
+        logger.info("Background message processing task started", "🔄")
 
         # Emit session_ready event to indicate initialization complete
         await self._event_queue.put(ProviderEvent(
             type=ProviderEventType.SESSION_READY.value,
             data={}
         ))
+        logger.info("Provider initialized and ready", "✨")
 
     async def close(self) -> None:
         """Close WebSocket connection and background tasks."""
@@ -312,17 +317,24 @@ class OpenAIRealtimeProvider(AIProvider):
                     event = self._translate_message(data)
                     if event:
                         await self._event_queue.put(event)
+                    else:
+                        # Log unhandled message types for debugging
+                        msg_type = data.get("type", "unknown")
+                        from core.logger import logger
+                        logger.warning(f"Unhandled OpenAI message type: {msg_type}", "⚠️")
                 except json.JSONDecodeError:
                     # Skip malformed JSON messages
                     continue
                 except asyncio.CancelledError:
                     break
-        except Exception:
+        except Exception as e:
             # WebSocket connection closed or other error
+            from core.logger import logger
+            logger.error(f"WebSocket processing error: {type(e).__name__}: {e}", "❌")
             # Emit error event
             await self._event_queue.put(ProviderEvent(
                 type=ProviderEventType.ERROR.value,
-                data={"message": "WebSocket connection closed"}
+                data={"message": f"WebSocket error: {e}"}
             ))
 
     def _translate_message(self, data: dict) -> Optional[ProviderEvent]:
