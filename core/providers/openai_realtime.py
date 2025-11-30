@@ -348,7 +348,12 @@ class OpenAIRealtimeProvider(AIProvider):
         # Audio output
         if msg_type == "response.output_audio.delta":
             audio_b64 = data.get("delta", "")
-            audio_bytes = base64.b64decode(audio_b64) if audio_b64 else b""
+            try:
+                audio_bytes = base64.b64decode(audio_b64) if audio_b64 else b""
+            except Exception as e:
+                from core.logger import logger
+                logger.warning(f"Failed to decode audio delta: {e}", "⚠️")
+                audio_bytes = b""
             return ProviderEvent(
                 type=ProviderEventType.AUDIO_OUT.value,
                 data={"audio": audio_bytes}
