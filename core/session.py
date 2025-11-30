@@ -1084,16 +1084,53 @@ class BillySession:
             # Initialize provider connection
             await self.provider.initialize()
 
-            # Build initial session configuration
-            session_config = {
-                "instructions": get_instructions_with_user_context(),
-                "tools": get_tools_for_current_mode(),
-            }
-            if self.provider.supports_native_audio and not TEXT_ONLY_MODE:
-                session_config["voice"] = persona_manager.get_current_persona_voice()
-
-            # Update provider session with initial config
-            await self.provider.update_session(**session_config)
+            # For OpenAI Realtime, send complete session config including VAD
+            # Other providers can use update_session() for simpler config
+            if hasattr(self.provider, 'ws') and self.provider.ws:
+                # Send full OpenAI Realtime session configuration
+                session_update = {
+                    "type": "session.update",
+                    "session": {
+                        "type": "realtime",
+                        "instructions": get_instructions_with_user_context(),
+                        "tools": get_tools_for_current_mode(),
+                        "audio": {
+                            "input": {
+                                "format": {"type": "audio/pcm", "rate": 24000},
+                                "turn_detection": {
+                                    "type": "server_vad",
+                                    **SERVER_VAD_PARAMS[TURN_EAGERNESS],
+                                    "create_response": True,
+                                    "interrupt_response": True,
+                                },
+                            },
+                            **(
+                                {
+                                    "output": {
+                                        "format": {
+                                            "type": "audio/pcm",
+                                            "rate": 24000,
+                                        },
+                                        "voice": persona_manager.get_current_persona_voice(),
+                                        "speed": 1.0,
+                                    }
+                                }
+                                if not TEXT_ONLY_MODE
+                                else {}
+                            ),
+                        },
+                    },
+                }
+                await self.provider.ws.send(json.dumps(session_update))
+            else:
+                # Use provider-agnostic update_session for other providers
+                session_config = {
+                    "instructions": get_instructions_with_user_context(),
+                    "tools": get_tools_for_current_mode(),
+                }
+                if self.provider.supports_native_audio and not TEXT_ONLY_MODE:
+                    session_config["voice"] = persona_manager.get_current_persona_voice()
+                await self.provider.update_session(**session_config)
 
             # Handle kickoff message (from MQTT say)
             if self.kickoff_text:
