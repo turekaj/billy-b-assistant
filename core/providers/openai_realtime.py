@@ -310,14 +310,16 @@ class OpenAIRealtimeProvider(AIProvider):
             async for message in self.ws:
                 try:
                     data = json.loads(message)
+                    msg_type = data.get("type", "unknown")
+                    from core.logger import logger
+                    logger.info(f"Received OpenAI message: {msg_type}", "📨")
                     event = self._translate_message(data)
                     if event:
+                        logger.info(f"Translated to event: {event.type}", "✅")
                         await self._event_queue.put(event)
                     else:
                         # Log unhandled message types for debugging
-                        msg_type = data.get("type", "unknown")
-                        from core.logger import logger
-                        logger.warning(f"Unhandled OpenAI message type: {msg_type}", "⚠️")
+                        logger.warning(f"Unhandled OpenAI message type: {msg_type} (returned None)", "⚠️")
                 except json.JSONDecodeError:
                     # Skip malformed JSON messages
                     continue
