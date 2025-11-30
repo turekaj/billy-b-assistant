@@ -230,7 +230,7 @@ MIC_PREFERENCE = os.getenv("MIC_PREFERENCE")
 MIC_TIMEOUT_SECONDS = int(os.getenv("MIC_TIMEOUT_SECONDS", "5"))
 SILENCE_THRESHOLD = float(os.getenv("SILENCE_THRESHOLD", "1000"))
 CHUNK_MS = int(os.getenv("CHUNK_MS", "40"))
-PLAYBACK_VOLUME = 1
+PLAYBACK_VOLUME = 0.3
 MOUTH_ARTICULATION = int(os.getenv("MOUTH_ARTICULATION", "5"))
 TURN_EAGERNESS = os.getenv("TURN_EAGERNESS", "high").strip().lower()
 if TURN_EAGERNESS not in {"low", "medium", "high"}:
