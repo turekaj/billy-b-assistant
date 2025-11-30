@@ -1229,7 +1229,9 @@ class BillySession:
             if not self.kickoff_text:
                 self._start_mic()
 
+            logger.info("About to start receiving events from provider", "🔄")
             async for event in self.provider.receive_events():
+                logger.info(f"Got event from provider: {event}", "📥")
                 if not self.session_active.is_set():
                     print("🚪 Session marked as inactive, stopping stream loop.")
                     print()  # Add newline to end the mic volume display line
@@ -1237,7 +1239,7 @@ class BillySession:
 
                 # Skip None events (shouldn't happen but guard against it)
                 if event is None:
-                    logger.warning("Received None event from provider, skipping")
+                    logger.warning(f"Received None event from provider (type={type(event)}), skipping", "⚠️")
                     continue
 
                 if DEBUG_MODE and event.type not in ("TRANSCRIPT_DELTA", "AUDIO_OUT"):
