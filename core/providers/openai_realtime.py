@@ -32,23 +32,13 @@ class OpenAIRealtimeProvider(AIProvider):
         self._session_initialized = False
 
     async def initialize(self) -> None:
-        """Connect to OpenAI Realtime API and start background message processing."""
+        """Connect to OpenAI Realtime API (background task starts when receive_events called)."""
         from core.logger import logger
         uri = f"wss://api.openai.com/v1/realtime?model={self.model}"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         logger.info(f"Connecting to OpenAI Realtime: {uri}", "🔌")
         self.ws = await websockets.asyncio.client.connect(uri, additional_headers=headers)
         logger.success("Connected to OpenAI Realtime WebSocket", "✅")
-
-        # Start background task to read and process WebSocket messages
-        self._ws_read_task = asyncio.create_task(self._process_ws_messages())
-        logger.info("Background message processing task started", "🔄")
-
-        # Emit session_ready event to indicate initialization complete
-        await self._event_queue.put(ProviderEvent(
-            type=ProviderEventType.SESSION_READY.value,
-            data={}
-        ))
         logger.info("Provider initialized and ready", "✨")
 
     async def close(self) -> None:
@@ -259,6 +249,12 @@ class OpenAIRealtimeProvider(AIProvider):
 
     async def receive_events(self) -> AsyncIterator[ProviderEvent]:
         """Receive events from provider event queue."""
+        # Start background task on first call (after session config has been sent)
+        if not self._ws_read_task:
+            from core.logger import logger
+            logger.info("Starting background message processing task", "🔄")
+            self._ws_read_task = asyncio.create_task(self._process_ws_messages())
+
         while True:
             event = await self._event_queue.get()
             yield event
