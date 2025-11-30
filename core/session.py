@@ -1165,7 +1165,7 @@ class BillySession:
             self.last_activity[0] = time.time()
             self.user_spoke_after_assistant = True
 
-        audio.send_mic_audio(self.ws, samples, self.loop)
+        audio.send_mic_audio(self.provider, samples, self.loop)
 
     async def run_stream(self):
         if not TEXT_ONLY_MODE and audio.playback_done_event.is_set():

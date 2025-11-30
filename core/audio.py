@@ -265,7 +265,7 @@ def handle_incoming_audio_chunk(audio_b64, buffer):
     return len(audio_chunk)
 
 
-def send_mic_audio(ws, samples, loop):
+def send_mic_audio(provider, samples, loop):
     try:
         # Ensure samples is a proper numpy array
         if not isinstance(samples, np.ndarray):
@@ -286,12 +286,7 @@ def send_mic_audio(ws, samples, loop):
         )
 
         future = asyncio.run_coroutine_threadsafe(
-            ws.send(
-                json.dumps({
-                    "type": "input_audio_buffer.append",
-                    "audio": base64.b64encode(pcm).decode("utf-8"),
-                })
-            ),
+            provider.send_audio(pcm),
             loop,
         )
 
