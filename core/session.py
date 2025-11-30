@@ -1238,7 +1238,13 @@ class BillySession:
 
             logger.info("About to start receiving events from provider", "🔄")
             async for event in self.provider.receive_events():
-                logger.info(f"Got event from provider: {event}", "📥")
+                # Log event without full audio bytes to keep logs readable
+                from .providers import ProviderEventType
+                if event.type == ProviderEventType.AUDIO_OUT.value:
+                    audio_len = len(event.data.get("audio", b""))
+                    logger.info(f"Got event from provider: ProviderEvent(type='audio_out', audio_bytes={audio_len})", "📥")
+                else:
+                    logger.info(f"Got event from provider: {event}", "📥")
                 if not self.session_active.is_set():
                     print("🚪 Session marked as inactive, stopping stream loop.")
                     print()  # Add newline to end the mic volume display line

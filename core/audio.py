@@ -683,13 +683,12 @@ def _resample_24k_mono_to_48k_stereo(mono: np.ndarray) -> np.ndarray:
     # Final hard clip as safety measure, then convert to int16
     audio_int16 = np.clip(stereo, -32768, 32767).astype(np.int16)
 
-    # Ensure C-contiguous array for PyAudio compatibility
+    # Ensure C-contiguous array for sounddevice compatibility
     if not audio_int16.flags['C_CONTIGUOUS']:
         audio_int16 = np.ascontiguousarray(audio_int16)
 
-    # Flatten to 1D for PyAudio (interleaved stereo format)
-    # This ensures buffer size is always a multiple of element size
-    return audio_int16.flatten()
+    # Return 2D array (frames, channels) for sounddevice
+    return audio_int16
 
 
 def _maybe_trigger_interlude(

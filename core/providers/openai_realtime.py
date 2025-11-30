@@ -262,7 +262,12 @@ class OpenAIRealtimeProvider(AIProvider):
         while True:
             logger.info("Waiting for event from queue...", "⏳")
             event = await self._event_queue.get()
-            logger.info(f"Got event from queue: {event}", "📦")
+            # Log event without full audio bytes to keep logs readable
+            if event.type == ProviderEventType.AUDIO_OUT.value:
+                audio_len = len(event.data.get("audio", b""))
+                logger.info(f"Got event from queue: ProviderEvent(type='audio_out', audio_bytes={audio_len})", "📦")
+            else:
+                logger.info(f"Got event from queue: {event}", "📦")
             yield event
 
     async def send_tool_result(self, tool_call_id: str, result: dict) -> None:
