@@ -452,6 +452,7 @@ class OpenAIRealtimeProvider(AIProvider):
 
         # Error message from API
         elif msg_type == "error":
+            from core.logger import logger
             error_data = data.get("error", {})
             error_message = error_data.get("message", "Unknown error")
             error_type = error_data.get("type", "unknown")
