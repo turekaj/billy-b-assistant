@@ -435,6 +435,7 @@ class BillySession:
         # Turn-level flags for follow-up detection
         self._saw_transcript_delta = False
         self._turn_had_speech = False
+        self._saw_follow_up_call = False
         self._active_transcript_stream: str | None = None  # "audio" | "text"
 
         # Flag for handling "I am not X" scenarios
@@ -1082,7 +1083,9 @@ class BillySession:
 
         try:
             # Initialize provider connection
+            logger.info(f"Initializing provider: {type(self.provider).__name__}", "🔌")
             await self.provider.initialize()
+            logger.info(f"Provider initialized successfully", "✅")
 
             # For OpenAI Realtime, send complete session config including VAD
             # Other providers can use update_session() for simpler config
