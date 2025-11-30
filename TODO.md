@@ -32,9 +32,23 @@
   - Allows test mode to work without hardware
   - Graceful error handling for missing libraries
 
+### Audio Quality Improvements ✅
+- [x] Fix audio crackling/rattling noise in API speech synthesis
+  - Detected old server processes with incorrect audio configuration
+  - Changed output stream from hardcoded 48000 Hz to detected OUTPUT_RATE
+  - Implemented buffer flushing for API audio chunks at phrase boundaries
+  - Resolved "last syllable" clipping artifacts
+
+- [x] Fix audio crackling/rattling in song playback
+  - Implemented soft clipping with tanh function instead of hard clipping
+  - Moved resampling to float32 space (before int16 conversion)
+  - Applied soft clipping consistently across main audio, vocals, and drums
+  - Reduced PLAYBACK_VOLUME from 0.5 to 0.3 for additional headroom
+  - Result: Clean audio on both API synthesis and song playback
+
 ## In Progress 🔄
 
-None currently - all core test mode functionality complete!
+None currently - all core test mode and audio quality features complete!
 
 ## Remaining Features (Optional) 📋
 
