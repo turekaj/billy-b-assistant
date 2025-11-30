@@ -1102,6 +1102,8 @@ class BillySession:
                 tools_openai = [
                     {
                         "type": "function",
+                        "name": tool["name"],
+                        "description": tool["description"],
                         "function": {
                             "name": tool["name"],
                             "description": tool["description"],
