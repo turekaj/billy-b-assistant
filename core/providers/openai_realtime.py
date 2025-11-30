@@ -249,14 +249,20 @@ class OpenAIRealtimeProvider(AIProvider):
 
     async def receive_events(self) -> AsyncIterator[ProviderEvent]:
         """Receive events from provider event queue."""
+        from core.logger import logger
+        logger.info(f"receive_events called: _ws_read_task={self._ws_read_task}", "🔍")
+
         # Start background task on first call (after session config has been sent)
         if not self._ws_read_task:
-            from core.logger import logger
             logger.info("Starting background message processing task", "🔄")
             self._ws_read_task = asyncio.create_task(self._process_ws_messages())
+        else:
+            logger.warning(f"Background task already exists: {self._ws_read_task}", "⚠️")
 
         while True:
+            logger.info("Waiting for event from queue...", "⏳")
             event = await self._event_queue.get()
+            logger.info(f"Got event from queue: {event}", "📦")
             yield event
 
     async def send_tool_result(self, tool_call_id: str, result: dict) -> None:
