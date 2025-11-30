@@ -153,3 +153,45 @@ class GrokProvider(AIProvider):
     def supports_function_calls(self) -> bool:
         """Grok supports function calls."""
         return True
+
+    @property
+    def supports_server_vad(self) -> bool:
+        """Grok is text-based, no server-side voice activity detection."""
+        return False
+
+    # Realtime provider interface implementations (stubs for now, will be completed in later commits)
+
+    async def update_session(
+        self,
+        instructions: Optional[str] = None,
+        tools: Optional[list[ToolDefinition]] = None,
+        voice: Optional[str] = None
+    ) -> None:
+        """Update session configuration mid-conversation."""
+        # TODO: Implement session update for Grok in Commit 3
+        pass
+
+    async def send_audio(self, audio_pcm: bytes) -> None:
+        """Send raw PCM audio to provider."""
+        # TODO: Implement audio sending for Grok in later commits
+        pass
+
+    async def receive_events(self) -> AsyncIterator:
+        """Receive events from provider."""
+        # TODO: Implement event streaming for Grok in later commits
+        yield  # This is a generator but empty for now
+
+    async def send_tool_result(self, tool_call_id: str, result: dict) -> None:
+        """Send tool execution result back to provider."""
+        # TODO: Implement tool result sending for Grok in later commits
+        pass
+
+    async def trigger_response(self) -> None:
+        """Manually trigger a response from the provider."""
+        # TODO: Implement response triggering for Grok in later commits
+        pass
+
+    async def send_user_message(self, text: str) -> None:
+        """Send a text message from user."""
+        # TODO: Implement user message sending for Grok in later commits
+        pass

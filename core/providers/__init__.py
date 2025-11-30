@@ -15,7 +15,16 @@ STT Providers:
   - Local STT (planned)
 """
 
-from .ai_provider import AIProvider, AIMessage, AIResponse, MessageRole, ToolDefinition
+from .ai_provider import (
+    AIProvider,
+    AIMessage,
+    AIResponse,
+    MessageRole,
+    ToolDefinition,
+    ToolCall,
+    ProviderEvent,
+    ProviderEventType,
+)
 from .openai_realtime import OpenAIRealtimeProvider
 from .grok import GrokProvider
 from .tts_provider import TTSProvider
@@ -31,6 +40,9 @@ __all__ = [
     "AIResponse",
     "MessageRole",
     "ToolDefinition",
+    "ToolCall",
+    "ProviderEvent",
+    "ProviderEventType",
     # AI Providers
     "OpenAIRealtimeProvider",
     "GrokProvider",

@@ -13,6 +13,19 @@ class MessageRole(Enum):
     SYSTEM = "system"
 
 
+class ProviderEventType(Enum):
+    """Types of events from AI providers."""
+    SESSION_READY = "session_ready"
+    SPEECH_STARTED = "speech_started"
+    SPEECH_STOPPED = "speech_stopped"
+    AUDIO_OUT = "audio_out"
+    TRANSCRIPT_DELTA = "transcript_delta"
+    TRANSCRIPT_DONE = "transcript_done"
+    TOOL_CALL = "tool_call"
+    RESPONSE_DONE = "response_done"
+    ERROR = "error"
+
+
 class ToolType(Enum):
     """Type of tool/function the AI can call."""
     FUNCTION = "function"
@@ -24,6 +37,21 @@ class ToolDefinition:
     name: str
     description: str
     parameters: Dict[str, Any]  # JSON schema format
+
+
+@dataclass
+class ToolCall:
+    """Provider-agnostic representation of a tool/function call."""
+    id: str  # Unique identifier for this tool call
+    name: str  # Name of the tool/function to call
+    arguments: Dict[str, Any]  # Arguments to pass to the tool
+
+
+@dataclass
+class ProviderEvent:
+    """Provider-agnostic event from AI."""
+    type: str  # Event type (use ProviderEventType values)
+    data: Dict[str, Any]  # Event-specific data
 
 
 @dataclass
@@ -90,6 +118,82 @@ class AIProvider(ABC):
     @abstractmethod
     def supports_function_calls(self) -> bool:
         """Whether this provider supports function calling."""
+        pass
+
+    @property
+    @abstractmethod
+    def supports_server_vad(self) -> bool:
+        """Whether this provider supports server-side voice activity detection."""
+        pass
+
+    # Realtime provider interface methods
+    # These are for providers that need bidirectional communication (realtime audio, events)
+
+    @abstractmethod
+    async def update_session(
+        self,
+        instructions: Optional[str] = None,
+        tools: Optional[list[ToolDefinition]] = None,
+        voice: Optional[str] = None
+    ) -> None:
+        """
+        Update session configuration mid-conversation.
+
+        Args:
+            instructions: System instructions/prompt
+            tools: Available tools/functions
+            voice: Voice preference for TTS output
+        """
+        pass
+
+    @abstractmethod
+    async def send_audio(self, audio_pcm: bytes) -> None:
+        """
+        Send raw PCM audio to provider.
+
+        Args:
+            audio_pcm: Raw audio bytes in PCM format (24kHz mono int16)
+        """
+        pass
+
+    @abstractmethod
+    async def receive_events(self) -> AsyncIterator[ProviderEvent]:
+        """
+        Receive events from provider.
+
+        Yields:
+            ProviderEvent objects (audio, transcripts, tool calls, etc)
+        """
+        pass
+
+    @abstractmethod
+    async def send_tool_result(self, tool_call_id: str, result: Dict[str, Any]) -> None:
+        """
+        Send tool execution result back to provider.
+
+        Args:
+            tool_call_id: ID of the tool call this result is for
+            result: Result dictionary with status and data
+        """
+        pass
+
+    @abstractmethod
+    async def trigger_response(self) -> None:
+        """
+        Manually trigger a response from the provider.
+
+        Used for kickoff messages and post-tool execution.
+        """
+        pass
+
+    @abstractmethod
+    async def send_user_message(self, text: str) -> None:
+        """
+        Send a text message from user.
+
+        Args:
+            text: The user's message text
+        """
         pass
 
     def __repr__(self) -> str:
