@@ -184,11 +184,21 @@ def register_virtual_button_handler(handler: Callable) -> None:
     _virtual_button_handlers.append(handler)
 
 
+def clear_virtual_button_handlers() -> None:
+    """Clear all registered virtual button handlers (for testing)."""
+    global _virtual_button_handlers
+    _virtual_button_handlers.clear()
+
+
 def trigger_virtual_button() -> None:
     """Simulate a button press (for testing via web UI or CLI)."""
-    # Use the mock button's trigger_press() method to properly set is_pressed state
-    # This ensures handlers see button.is_pressed=True during execution
-    mock_button.trigger_press()
+    # Set button state and call all registered handlers
+    mock_button.is_pressed = True
+    try:
+        for handler in _virtual_button_handlers:
+            handler()
+    finally:
+        mock_button.is_pressed = False
 
 
 def get_test_status() -> dict:

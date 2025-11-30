@@ -202,6 +202,7 @@ class TestHelperFunctions:
         """Reset test mode before each test."""
         test_mode._TEST_MODE_ENABLED = False
         test_mode.clear_motor_log()
+        test_mode.clear_virtual_button_handlers()
 
     def test_get_motor_log_pretty(self):
         """Test pretty-printing motor log."""
