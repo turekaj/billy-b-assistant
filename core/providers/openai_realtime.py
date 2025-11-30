@@ -12,6 +12,9 @@ from .ai_provider import (
     AIResponse,
     MessageRole,
     ToolDefinition,
+    ProviderEvent,
+    ProviderEventType,
+    ToolCall,
 )
 from core.config import OPENAI_API_KEY, OPENAI_MODEL
 
@@ -24,15 +27,34 @@ class OpenAIRealtimeProvider(AIProvider):
         self.api_key = OPENAI_API_KEY
         self.ws = None
         self._message_id = 0
+        self._event_queue = asyncio.Queue()
+        self._ws_read_task = None
+        self._session_initialized = False
 
     async def initialize(self) -> None:
-        """Connect to OpenAI Realtime API."""
+        """Connect to OpenAI Realtime API and start background message processing."""
         uri = f"wss://api.openai.com/v1/realtime?model={self.model}"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         self.ws = await websockets.asyncio.client.connect(uri, additional_headers=headers)
 
+        # Start background task to read and process WebSocket messages
+        self._ws_read_task = asyncio.create_task(self._process_ws_messages())
+
+        # Emit session_ready event to indicate initialization complete
+        await self._event_queue.put(ProviderEvent(
+            type=ProviderEventType.SESSION_READY.value,
+            data={}
+        ))
+
     async def close(self) -> None:
-        """Close WebSocket connection."""
+        """Close WebSocket connection and background tasks."""
+        if self._ws_read_task and not self._ws_read_task.done():
+            self._ws_read_task.cancel()
+            try:
+                await self._ws_read_task
+            except asyncio.CancelledError:
+                pass
+
         if self.ws:
             await self.ws.close()
 
@@ -171,7 +193,7 @@ class OpenAIRealtimeProvider(AIProvider):
         """OpenAI Realtime supports server-side voice activity detection."""
         return True
 
-    # Realtime provider interface implementations (stubs for now, will be completed in Commit 3)
+    # Realtime provider interface implementations
 
     async def update_session(
         self,
@@ -180,30 +202,220 @@ class OpenAIRealtimeProvider(AIProvider):
         voice: Optional[str] = None
     ) -> None:
         """Update session configuration mid-conversation."""
-        # TODO: Implement session update in Commit 3
-        pass
+        if not self.ws:
+            raise RuntimeError("Provider not initialized")
+
+        # Convert tools to OpenAI format if provided
+        tools_config = None
+        if tools:
+            tools_config = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters,
+                    },
+                }
+                for tool in tools
+            ]
+
+        # Build session update
+        session_update = {}
+        if instructions is not None:
+            session_update["instructions"] = instructions
+        if tools_config is not None:
+            session_update["tools"] = tools_config
+        if voice is not None:
+            session_update["voice"] = voice
+
+        # Only send if there's something to update
+        if session_update:
+            await self.ws.send(
+                json.dumps({
+                    "type": "session.update",
+                    "session": session_update,
+                })
+            )
 
     async def send_audio(self, audio_pcm: bytes) -> None:
         """Send raw PCM audio to provider."""
-        # TODO: Implement audio sending in Commit 3
-        pass
+        if not self.ws:
+            raise RuntimeError("Provider not initialized")
 
-    async def receive_events(self) -> AsyncIterator:
-        """Receive events from provider."""
-        # TODO: Implement event streaming in Commit 3
-        yield  # This is a generator but empty for now
+        # Encode audio as base64 and send to OpenAI
+        audio_b64 = base64.b64encode(audio_pcm).decode("utf-8")
+        await self.ws.send(
+            json.dumps({
+                "type": "input_audio_buffer.append",
+                "audio": audio_b64,
+            })
+        )
+
+    async def receive_events(self) -> AsyncIterator[ProviderEvent]:
+        """Receive events from provider event queue."""
+        while True:
+            event = await self._event_queue.get()
+            yield event
 
     async def send_tool_result(self, tool_call_id: str, result: dict) -> None:
         """Send tool execution result back to provider."""
-        # TODO: Implement tool result sending in Commit 3
-        pass
+        if not self.ws:
+            raise RuntimeError("Provider not initialized")
+
+        # OpenAI Realtime expects tool result to be sent via conversation.item.create
+        await self.ws.send(
+            json.dumps({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": tool_call_id,
+                    "output": json.dumps(result),
+                },
+            })
+        )
 
     async def trigger_response(self) -> None:
         """Manually trigger a response from the provider."""
-        # TODO: Implement response triggering in Commit 3
-        pass
+        if not self.ws:
+            raise RuntimeError("Provider not initialized")
+
+        # Send response.create to trigger AI response
+        await self.ws.send(json.dumps({"type": "response.create"}))
 
     async def send_user_message(self, text: str) -> None:
         """Send a text message from user."""
-        # TODO: Implement user message sending in Commit 3
-        pass
+        if not self.ws:
+            raise RuntimeError("Provider not initialized")
+
+        # Send user message via conversation.item.create
+        await self.ws.send(
+            json.dumps({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "text", "text": text}],
+                },
+            })
+        )
+
+    async def _process_ws_messages(self) -> None:
+        """Background task: read WebSocket messages and translate to ProviderEvent."""
+        try:
+            if not self.ws:
+                return
+
+            async for message in self.ws:
+                try:
+                    data = json.loads(message)
+                    event = self._translate_message(data)
+                    if event:
+                        await self._event_queue.put(event)
+                except json.JSONDecodeError:
+                    # Skip malformed JSON messages
+                    continue
+                except asyncio.CancelledError:
+                    break
+        except Exception:
+            # WebSocket connection closed or other error
+            # Emit error event
+            await self._event_queue.put(ProviderEvent(
+                type=ProviderEventType.ERROR.value,
+                data={"message": "WebSocket connection closed"}
+            ))
+
+    def _translate_message(self, data: dict) -> Optional[ProviderEvent]:
+        """Translate OpenAI Realtime message to provider-agnostic ProviderEvent."""
+        msg_type = data.get("type", "")
+
+        # Audio output
+        if msg_type == "response.output_audio.delta":
+            audio_b64 = data.get("delta", "")
+            audio_bytes = base64.b64decode(audio_b64) if audio_b64 else b""
+            return ProviderEvent(
+                type=ProviderEventType.AUDIO_OUT.value,
+                data={"audio": audio_bytes}
+            )
+
+        # Transcript output
+        elif msg_type == "response.output_audio_transcript.delta":
+            text = data.get("delta", "")
+            return ProviderEvent(
+                type=ProviderEventType.TRANSCRIPT_DELTA.value,
+                data={"text": text}
+            )
+
+        elif msg_type == "response.output_audio_transcript.done":
+            text = data.get("transcript", "")
+            return ProviderEvent(
+                type=ProviderEventType.TRANSCRIPT_DONE.value,
+                data={"text": text}
+            )
+
+        # Alternate transcript types (text-only mode)
+        elif msg_type == "response.text.delta":
+            text = data.get("delta", "")
+            return ProviderEvent(
+                type=ProviderEventType.TRANSCRIPT_DELTA.value,
+                data={"text": text}
+            )
+
+        elif msg_type == "response.text.done":
+            text = data.get("text", "")
+            return ProviderEvent(
+                type=ProviderEventType.TRANSCRIPT_DONE.value,
+                data={"text": text}
+            )
+
+        # Tool call (function call)
+        elif msg_type == "response.function_call_arguments.delta":
+            # Delta updates to function call arguments - aggregate them
+            # This is handled in response.function_call_arguments.done
+            return None
+
+        elif msg_type == "response.function_call_arguments.done":
+            # Tool call is complete
+            item = data.get("item", {})
+            if item.get("type") == "function_call":
+                call_id = item.get("id", "")
+                function = item.get("function", {})
+                arguments_str = function.get("arguments", "{}")
+                try:
+                    arguments = json.loads(arguments_str)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                return ProviderEvent(
+                    type=ProviderEventType.TOOL_CALL.value,
+                    data={
+                        "tool_call": ToolCall(
+                            id=call_id,
+                            name=function.get("name", ""),
+                            arguments=arguments
+                        )
+                    }
+                )
+
+        # Speech detection
+        elif msg_type == "input_audio_buffer.speech_started":
+            return ProviderEvent(
+                type=ProviderEventType.SPEECH_STARTED.value,
+                data={}
+            )
+
+        elif msg_type == "input_audio_buffer.speech_stopped":
+            return ProviderEvent(
+                type=ProviderEventType.SPEECH_STOPPED.value,
+                data={}
+            )
+
+        # Response complete
+        elif msg_type == "response.done":
+            return ProviderEvent(
+                type=ProviderEventType.RESPONSE_DONE.value,
+                data={}
+            )
+
+        # Ignore other message types for now
+        return None
