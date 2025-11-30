@@ -474,9 +474,16 @@ class BillySession:
         if TEXT_ONLY_MODE:
             return
         self._turn_had_speech = True
-        audio_b64 = data.get("audio") or data.get("delta")
-        if audio_b64:
-            audio_chunk = base64.b64decode(audio_b64)
+        audio_data = data.get("audio") or data.get("delta")
+        if audio_data:
+            # Handle both base64-encoded strings and raw bytes
+            if isinstance(audio_data, bytes):
+                # Already decoded (from provider events)
+                audio_chunk = audio_data
+            else:
+                # Base64-encoded string (backward compatibility)
+                audio_chunk = base64.b64decode(audio_data)
+
             self.audio_buffer.extend(audio_chunk)
             self.last_activity[0] = time.time()
             audio.playback_queue.put(audio_chunk)
