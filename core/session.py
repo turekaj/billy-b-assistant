@@ -1232,6 +1232,11 @@ class BillySession:
                     print()  # Add newline to end the mic volume display line
                     break
 
+                # Skip None events (shouldn't happen but guard against it)
+                if event is None:
+                    logger.warning("Received None event from provider, skipping")
+                    continue
+
                 if DEBUG_MODE and event.type not in ("TRANSCRIPT_DELTA", "AUDIO_OUT"):
                     logger.verbose(f"Provider event: type={event.type}, data={event.data}", "🔁")
 

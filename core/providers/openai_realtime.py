@@ -410,6 +410,13 @@ class OpenAIRealtimeProvider(AIProvider):
                 data={}
             )
 
+        # Session updated
+        elif msg_type in ("session.updated", "session_updated"):
+            return ProviderEvent(
+                type=ProviderEventType.SESSION_READY.value,
+                data={}
+            )
+
         # Response complete
         elif msg_type == "response.done":
             return ProviderEvent(
