@@ -36,6 +36,7 @@ from .mqtt import mqtt_publish
 from .persona import update_persona_ini
 from .persona_manager import persona_manager
 from .profile_manager import user_manager
+from .providers import AIProvider
 from .song_manager import song_manager
 
 
@@ -387,6 +388,7 @@ def get_tools_for_current_mode():
 class BillySession:
     def __init__(
         self,
+        provider: AIProvider,
         interrupt_event=None,
         *,
         kickoff_text: str | None = None,
@@ -394,8 +396,7 @@ class BillySession:
         kickoff_to_interactive: bool = False,  # immediately open-mic after kickoff
         autofollowup: str = "auto",  # "auto" | "never" | "always"
     ):
-        self.ws = None
-        self.ws_lock: asyncio.Lock = asyncio.Lock()
+        self.provider = provider
         self.loop = None
         self.audio_buffer = bytearray()
         self.committed = False
@@ -413,7 +414,7 @@ class BillySession:
         self.mic_running = False
         self.mic_timeout_task: asyncio.Task | None = None
 
-        # Track whenever a session is updated after creation, and OpenAI is ready to receive voice.
+        # Track whenever a session is updated after creation, and provider is ready to receive voice.
         self.session_initialized = False
         self.run_mode = RUN_MODE
 
@@ -445,32 +446,6 @@ class BillySession:
         self._logged_mic_blocked_1 = False
         self._logged_waiting_for_wakeup = False
 
-    # ---- Websocket helpers ---------------------------------------------
-    async def _ws_send_json(self, payload: dict[str, Any]):
-        """Send a JSON payload over the session websocket with locking.
-
-        This method is a small convenience to avoid repeating the lock and
-        json.dumps boilerplate across the codebase.
-        """
-        async with self.ws_lock:
-            if self.ws is not None:
-                await self.ws.send(json.dumps(payload))
-
-    # ---- Message type constants ----------------------------------------
-    AUDIO_OUT_TYPES = {
-        "response.output_audio",
-        "response.output_audio.delta",
-    }
-    TRANSCRIPT_DELTA_TYPES = {
-        "response.output_audio_transcript.delta",
-        "response.audio_transcript.delta",
-        "response.text.delta",
-    }
-    TRANSCRIPT_DONE_TYPES = {
-        "response.output_audio_transcript.done",
-        "response.audio_transcript.done",
-        "response.text.done",
-    }
 
     # ---- Private handlers -----------------------------------------------
     def _on_response_created(self):
