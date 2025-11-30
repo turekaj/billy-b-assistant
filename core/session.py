@@ -1080,100 +1080,49 @@ class BillySession:
             "🔧",
         )
 
-        async with self.ws_lock:
-            if self.ws is None:
-                uri = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
-                headers = {
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
-                }
+        try:
+            # Initialize provider connection
+            await self.provider.initialize()
 
-                try:
-                    self.ws = await websockets.asyncio.client.connect(
-                        uri, additional_headers=headers
+            # Build initial session configuration
+            session_config = {
+                "instructions": get_instructions_with_user_context(),
+                "tools": get_tools_for_current_mode(),
+            }
+            if self.provider.supports_native_audio and not TEXT_ONLY_MODE:
+                session_config["voice"] = persona_manager.get_current_persona_voice()
+
+            # Update provider session with initial config
+            await self.provider.update_session(**session_config)
+
+            # Handle kickoff message (from MQTT say)
+            if self.kickoff_text:
+                if self.kickoff_kind == "prompt":
+                    kickoff_payload = self.kickoff_text
+                elif self.kickoff_kind == "literal":
+                    kickoff_payload = (
+                        "Say the user's message **verbatim**, word for word, with no additions or reinterpretation.\n"
+                        "Maintain personality, but do NOT rephrase or expand.\n\n"
+                        f"Repeat this literal message sent via MQTT: {self.kickoff_text}"
+                        "\n\n"
+                        "After you finish speaking, call `follow_up_intent` once. "
+                        "If the line is not a question and needs no reply, set expects_follow_up=false."
                     )
-                    await self.ws.send(
-                        json.dumps({
-                            "type": "session.update",
-                            "session": {
-                                "type": "realtime",
-                                "instructions": get_instructions_with_user_context(),
-                                "tools": get_tools_for_current_mode(),
-                                "audio": {
-                                    "input": {
-                                        "format": {"type": "audio/pcm", "rate": 24000},
-                                        "turn_detection": {
-                                            "type": "server_vad",
-                                            **SERVER_VAD_PARAMS[TURN_EAGERNESS],
-                                            "create_response": True,
-                                            "interrupt_response": True,
-                                        },
-                                    },
-                                    **(
-                                        {
-                                            "output": {
-                                                "format": {
-                                                    "type": "audio/pcm",
-                                                    "rate": 24000,
-                                                },
-                                                "voice": persona_manager.get_current_persona_voice(),
-                                                "speed": 1.0,
-                                            }
-                                        }
-                                        if not TEXT_ONLY_MODE
-                                        else {}
-                                    ),
-                                },
-                            },
-                        })
-                    )
+                else:
+                    kickoff_payload = self.kickoff_text
 
-                    # Kickoff message (from MQTT say)
-                    if self.kickoff_text:
-                        if self.kickoff_kind == "prompt":
-                            kickoff_payload = self.kickoff_text
-                        elif self.kickoff_kind == "literal":
-                            kickoff_payload = (
-                                "Say the user's message **verbatim**, word for word, with no additions or reinterpretation.\n"
-                                "Maintain personality, but do NOT rephrase or expand.\n\n"
-                                f"Repeat this literal message sent via MQTT: {self.kickoff_text}"
-                                "\n\n"
-                                "After you finish speaking, call `follow_up_intent` once. "
-                                "If the line is not a question and needs no reply, set expects_follow_up=false."
-                            )
-                        else:
-                            kickoff_payload = self.kickoff_text
+                await self.provider.send_user_message(kickoff_payload)
+                await self.provider.trigger_response()
 
-                        await self.ws.send(
-                            json.dumps({
-                                "type": "conversation.item.create",
-                                "item": {
-                                    "type": "message",
-                                    "role": "user",
-                                    "content": [
-                                        {"type": "input_text", "text": kickoff_payload}
-                                    ],
-                                },
-                            })
-                        )
-                        await self.ws.send(json.dumps({"type": "response.create"}))
-
-                except websockets.exceptions.ConnectionClosedError as e:
-                    reason = getattr(e, "reason", str(e))
-                    if "invalid_api_key" in reason:
-                        await self._play_error_sound("noapikey", reason)
-                    else:
-                        await self._play_error_sound("error", reason)
-                    return
-
-                except socket.gaierror:
-                    await self._play_error_sound(
-                        "nowifi", "Network unreachable or DNS failed"
-                    )
-                    return
-
-                except Exception as e:
-                    await self._play_error_sound("error", str(e))
-                    return
+        except Exception as e:
+            error_msg = str(e)
+            if "invalid_api_key" in error_msg.lower():
+                await self._play_error_sound("noapikey", error_msg)
+            elif "gaierror" in type(e).__name__ or "network" in error_msg.lower():
+                await self._play_error_sound("nowifi", "Network unreachable or DNS failed")
+            else:
+                await self._play_error_sound("error", error_msg)
+            return
 
         if not TEXT_ONLY_MODE:
             audio.playback_done_event.clear()
@@ -1240,22 +1189,16 @@ class BillySession:
             if not self.kickoff_text:
                 self._start_mic()
 
-            async for message in self.ws:
+            async for event in self.provider.receive_events():
                 if not self.session_active.is_set():
                     print("🚪 Session marked as inactive, stopping stream loop.")
                     print()  # Add newline to end the mic volume display line
                     break
-                data = json.loads(message)
-                if DEBUG_MODE and (
-                    DEBUG_MODE_INCLUDE_DELTA
-                    or not (data.get("type") or "").endswith("delta")
-                ):
-                    logger.verbose(f"Raw message: {data}", "🔁")
 
-                if data.get("type") in ("session.updated", "session_updated"):
-                    self.session_initialized = True
+                if DEBUG_MODE and event.type not in ("TRANSCRIPT_DELTA", "AUDIO_OUT"):
+                    logger.verbose(f"Provider event: type={event.type}, data={event.data}", "🔁")
 
-                await self.handle_message(data)
+                await self.handle_event(event)
 
         except Exception as e:
             logger.error(f"Error opening mic input: {e}")
@@ -1272,6 +1215,61 @@ class BillySession:
                 await self.post_response_handling()
             except Exception as e:
                 logger.warning(f"Error in post_response_handling: {e}")
+
+    async def handle_event(self, event):
+        """Handle provider-agnostic events dispatched from receive_events()."""
+        from .providers import ProviderEventType
+
+        event_type = event.type
+        data = event.data
+
+        if event_type == ProviderEventType.SESSION_READY.value:
+            self.session_initialized = True
+            return
+
+        if event_type == ProviderEventType.SPEECH_STARTED.value:
+            self._on_input_speech_started()
+            return
+
+        if event_type == ProviderEventType.SPEECH_STOPPED.value:
+            return
+
+        if event_type == ProviderEventType.TRANSCRIPT_DELTA.value:
+            text = data.get("text", "")
+            self._on_transcript_delta("TRANSCRIPT_DELTA", {"delta": text})
+            return
+
+        if event_type == ProviderEventType.TRANSCRIPT_DONE.value:
+            text = data.get("text", "")
+            self._on_transcript_done({"transcript": text})
+            return
+
+        if event_type == ProviderEventType.AUDIO_OUT.value:
+            audio_bytes = data.get("audio", b"")
+            self._on_audio_out({"audio": audio_bytes})
+            return
+
+        if event_type == ProviderEventType.TOOL_CALL.value:
+            tool_call = data.get("tool_call")
+            if tool_call:
+                await self._on_tool_args_done({
+                    "name": tool_call.name,
+                    "arguments": json.dumps(tool_call.arguments),
+                    "call_id": tool_call.id
+                })
+            return
+
+        if event_type == ProviderEventType.RESPONSE_DONE.value:
+            await self._on_response_done({})
+            return
+
+        if event_type == ProviderEventType.ERROR.value:
+            error_type = data.get("error_type", "error")
+            message = data.get("message", "Unknown error")
+            code = "noapikey" if "invalid_api_key" in error_type.lower() else "error"
+            logger.error(f"Provider Error ({code}): {message}")
+            await self._play_error_sound(code, message)
+            return
 
     async def handle_message(self, data):
         t = data.get("type") or ""
@@ -1365,11 +1363,7 @@ class BillySession:
             )
             mqtt_publish("billy/state", "idle")
             stop_all_motors()
-            async with self.ws_lock:
-                if self.ws:
-                    await self.ws.close()
-                    await self.ws.wait_closed()
-                    self.ws = None
+            await self.provider.close()
             return
 
         # Heuristic fallback (punctuation only)
@@ -1409,11 +1403,7 @@ class BillySession:
         logger.info("No follow-up. Ending session.", "🛑")
         mqtt_publish("billy/state", "idle")
         stop_all_motors()
-        async with self.ws_lock:
-            if self.ws:
-                await self.ws.close()
-                await self.ws.wait_closed()
-                self.ws = None
+        await self.provider.close()
 
     async def stop_session(self):
         logger.info("Stopping session...", "🛑")
@@ -1424,19 +1414,10 @@ class BillySession:
         self.session_active.clear()
         self._stop_mic()
 
-        async with self.ws_lock:
-            if self.ws:
-                try:
-                    await self.ws.close()
-                    # Add timeout to prevent hanging
-                    try:
-                        await asyncio.wait_for(self.ws.wait_closed(), timeout=2.0)
-                    except asyncio.TimeoutError:
-                        logger.warning("Websocket close timeout, forcing cleanup")
-                except Exception as e:
-                    logger.warning(f"Error closing websocket: {e}")
-                finally:
-                    self.ws = None
+        try:
+            await self.provider.close()
+        except Exception as e:
+            logger.warning(f"Error closing provider: {e}")
 
     async def request_stop(self):
         logger.info("Stop requested via external signal.", "🛑")
