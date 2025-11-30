@@ -110,9 +110,13 @@ def playback_worker(chunk_ms):
     drums_peak_time = 0
     next_beat_time = 0
 
+    # Buffer for accumulating small API audio chunks to reduce resampling artifacts
+    api_audio_buffer = np.array([], dtype=np.int16)
+    target_buffer_size = int(24000 * chunk_ms / 1000)  # Buffer ~1 chunk worth
+
     try:
         with sd.OutputStream(
-            samplerate=48000, channels=2, dtype='int16', device=OUTPUT_DEVICE_INDEX
+            samplerate=OUTPUT_RATE, channels=OUTPUT_CHANNELS, dtype='int16', device=OUTPUT_DEVICE_INDEX
         ) as stream:
             logger.info("Output stream opened", "🔈")
             while True:
@@ -189,20 +193,29 @@ def playback_worker(chunk_ms):
                             )
 
                 else:
+                    # Raw audio chunks from API - buffer them to reduce resampling artifacts
                     chunk = item
-                    mono = np.frombuffer(chunk, dtype=np.int16)
-                    chunk_len = int(24000 * chunk_ms / 1000)
-                    for i in range(0, len(mono), chunk_len):
-                        sub = mono[i : i + chunk_len]
-                        if len(sub) == 0:
-                            continue
-                        flap_from_pcm_chunk(sub, chunk_ms=chunk_ms)
-                        stream.write(_resample_24k_mono_to_48k_stereo(sub))
+                    chunk_mono = np.frombuffer(chunk, dtype=np.int16)
+                    api_audio_buffer = np.append(api_audio_buffer, chunk_mono)
 
-                        interlude_counter += len(sub)
+                    # Process when buffer reaches target size
+                    while len(api_audio_buffer) >= target_buffer_size:
+                        to_process = api_audio_buffer[:target_buffer_size]
+                        api_audio_buffer = api_audio_buffer[target_buffer_size:]
+
+                        flap_from_pcm_chunk(to_process, chunk_ms=chunk_ms)
+                        stream.write(_resample_24k_mono_to_48k_stereo(to_process))
+
+                        interlude_counter += len(to_process)
                         interlude_counter, interlude_target = _maybe_trigger_interlude(
                             interlude_counter, interlude_target
                         )
+
+                    # Flush remaining buffer if this is the last chunk (empty item indicates end)
+                    if len(api_audio_buffer) > 0 and len(chunk_mono) == 0:
+                        flap_from_pcm_chunk(api_audio_buffer, chunk_ms=chunk_ms)
+                        stream.write(_resample_24k_mono_to_48k_stereo(api_audio_buffer))
+                        api_audio_buffer = np.array([], dtype=np.int16)
 
                 playback_queue.task_done()
                 last_played_time = time.time()
@@ -574,35 +587,39 @@ async def play_song(song_name):
                 # --- Main audio (24kHz mono)
                 samples_main = np.frombuffer(frames_main, dtype=np.int16)
                 samples_main = samples_main.reshape((-1, 2)).mean(axis=1)
+                # Convert to float before resampling and processing
+                samples_main = samples_main.astype(np.float32)
                 if rate_main == 48000:
-                    samples_main = resample(
-                        samples_main, len(samples_main) // 2
-                    ).astype(np.int16)
-                samples_main = np.clip(samples_main * GAIN, -32768, 32767).astype(
-                    np.int16
-                )
+                    samples_main = resample(samples_main, len(samples_main) // 2)
+                # Apply soft clipping to prevent harsh distortion
+                scaled = samples_main * GAIN
+                max_val = 32767.0
+                soft_clipped = np.tanh(scaled / max_val) * max_val
+                samples_main = np.clip(soft_clipped, -32768, 32767).astype(np.int16)
 
                 # --- Vocals (for mouth flap)
                 samples_vocals = np.frombuffer(frames_vocals, dtype=np.int16)
                 samples_vocals = samples_vocals.reshape((-1, 2)).mean(axis=1)
+                # Convert to float before resampling and processing
+                samples_vocals = samples_vocals.astype(np.float32)
                 if rate_vocals == 48000:
-                    samples_vocals = resample(
-                        samples_vocals, len(samples_vocals) // 2
-                    ).astype(np.int16)
-                samples_vocals = np.clip(samples_vocals * GAIN, -32768, 32767).astype(
-                    np.int16
-                )
+                    samples_vocals = resample(samples_vocals, len(samples_vocals) // 2)
+                # Apply soft clipping to prevent harsh distortion
+                scaled_vocals = samples_vocals * GAIN
+                soft_clipped_vocals = np.tanh(scaled_vocals / max_val) * max_val
+                samples_vocals = np.clip(soft_clipped_vocals, -32768, 32767).astype(np.int16)
 
                 # --- Drums (for tail flap)
                 samples_drums = np.frombuffer(frames_drums, dtype=np.int16)
                 samples_drums = samples_drums.reshape((-1, 2)).mean(axis=1)
+                # Convert to float before resampling and processing
+                samples_drums = samples_drums.astype(np.float32)
                 if rate_drums == 48000:
-                    samples_drums = resample(
-                        samples_drums, len(samples_drums) // 2
-                    ).astype(np.int16)
-                samples_drums = np.clip(samples_drums * GAIN, -32768, 32767).astype(
-                    np.int16
-                )
+                    samples_drums = resample(samples_drums, len(samples_drums) // 2)
+                # Apply soft clipping to prevent harsh distortion
+                scaled_drums = samples_drums * GAIN
+                soft_clipped_drums = np.tanh(scaled_drums / max_val) * max_val
+                samples_drums = np.clip(soft_clipped_drums, -32768, 32767).astype(np.int16)
                 rms_drums = np.sqrt(np.mean(samples_drums.astype(np.float32) ** 2))
 
                 # --- Enqueue combined chunk
@@ -627,10 +644,33 @@ async def play_song(song_name):
 
 
 def _resample_24k_mono_to_48k_stereo(mono: np.ndarray) -> np.ndarray:
-    """Resample 24kHz mono int16 -> 48kHz stereo int16 with volume applied."""
-    resampled = resample(mono, int(len(mono) * 48000 / 24000)).astype(np.int16)
-    stereo = np.repeat(resampled[:, np.newaxis], 2, axis=1)
-    return np.clip(stereo * PLAYBACK_VOLUME, -32768, 32767).astype(np.int16)
+    """Resample mono int16 from 24kHz -> detected output rate with volume applied."""
+    # Use the detected output rate instead of hardcoded 48000
+    # This prevents crackling when output device uses a different sample rate
+    target_rate = OUTPUT_RATE or 48000  # Fallback to 48000 if not detected
+
+    if target_rate != 24000:
+        # Resample from 24kHz to target output rate
+        resampled = resample(mono, int(len(mono) * target_rate / 24000)).astype(np.float32)
+    else:
+        resampled = mono.astype(np.float32)
+
+    # Apply volume with soft clipping to prevent harsh distortion
+    scaled = resampled * PLAYBACK_VOLUME
+
+    # Soft clipping using tanh to prevent rattle noise from hard clipping
+    # This creates a smoother response at the limits
+    max_val = 32767.0
+    soft_clipped = np.tanh(scaled / max_val) * max_val
+
+    # Convert mono to stereo to match OUTPUT_CHANNELS
+    if OUTPUT_CHANNELS == 2:
+        stereo = np.repeat(soft_clipped[:, np.newaxis], 2, axis=1)
+    else:
+        stereo = soft_clipped[:, np.newaxis]
+
+    # Final hard clip as safety measure, then convert to int16
+    return np.clip(stereo, -32768, 32767).astype(np.int16)
 
 
 def _maybe_trigger_interlude(
