@@ -206,8 +206,22 @@ Use your backstory to inspire jokes, metaphors, or occasional references in conv
 {BACKSTORY_FACTS}
 """.strip()
 
-# === OpenAI Config ===
+# === Provider Configuration ===
+# AI Provider selection: "openai_realtime", "grok"
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openai_realtime").lower()
+
+# TTS Provider: "openai", "local" (only for non-realtime AI)
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "openai").lower()
+
+# STT Provider: "openai", "local" (only for non-realtime AI)
+STT_PROVIDER = os.getenv("STT_PROVIDER", "openai").lower()
+
+# API Keys for different providers
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GROK_API_KEY = os.getenv("GROK_API_KEY", "")
+GROK_MODEL = os.getenv("GROK_MODEL", "grok-2")
+
+# === OpenAI Config ===
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-realtime-mini")
 
 # === Modes ===
