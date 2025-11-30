@@ -1271,6 +1271,58 @@ class BillySession:
             await self._play_error_sound(code, message)
             return
 
+    async def _ws_send_json(self, data: dict[str, Any]):
+        """
+        Send JSON data to the provider in a provider-agnostic way.
+
+        This method provides compatibility for tool handlers that still use
+        direct WebSocket communication. For OpenAI Realtime, it constructs
+        appropriate provider method calls based on the message type.
+        """
+        msg_type = data.get("type", "")
+
+        # Handle tool result responses
+        if msg_type == "conversation.item.create":
+            item = data.get("item", {})
+            item_type = item.get("type")
+
+            if item_type == "function_call_output":
+                # Send tool result to provider
+                call_id = item.get("call_id", "")
+                output = item.get("output", "{}")
+                try:
+                    result = json.loads(output) if isinstance(output, str) else output
+                except json.JSONDecodeError:
+                    result = {"error": "Failed to parse output"}
+                await self.provider.send_tool_result(call_id, result)
+                return
+            elif item_type == "message" and item.get("role") == "user":
+                # Send user message to provider
+                content = item.get("content", [])
+                text = ""
+                for part in content:
+                    if part.get("type") == "input_text":
+                        text = part.get("text", "")
+                        break
+                if text:
+                    await self.provider.send_user_message(text)
+                return
+
+        # Handle response triggers
+        elif msg_type == "response.create":
+            await self.provider.trigger_response()
+            return
+
+        # Handle session updates (only instructions for now, to avoid API errors)
+        elif msg_type == "session.update":
+            session_data = data.get("session", {})
+            instructions = session_data.get("instructions")
+            if instructions:
+                await self.provider.update_session(instructions=instructions)
+            return
+
+        # For other message types, silently ignore (they're OpenAI-specific)
+
     async def handle_message(self, data):
         t = data.get("type") or ""
 
