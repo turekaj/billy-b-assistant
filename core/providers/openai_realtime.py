@@ -450,5 +450,13 @@ class OpenAIRealtimeProvider(AIProvider):
                 data={}
             )
 
+        # Error message from API
+        elif msg_type == "error":
+            error_data = data.get("error", {})
+            error_message = error_data.get("message", "Unknown error")
+            error_type = error_data.get("type", "unknown")
+            logger.error(f"OpenAI error: {error_type}: {error_message}", "❌")
+            return None
+
         # Ignore other message types for now
         return None
