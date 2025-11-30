@@ -36,6 +36,9 @@ def get_usb_pcm_card_index():
             if preference in name:
                 return int(card_index)
         return None
+    except FileNotFoundError:
+        # aplay not available on this platform (macOS, etc.)
+        return None
     except Exception as e:
         print("Failed to detect speaker card:", e)
         return None
@@ -55,6 +58,9 @@ def get_usb_capture_card_index():
         for card_index, _, longname, _, _ in cards:
             if "usb" in longname.lower():
                 return int(card_index)
+        return None
+    except FileNotFoundError:
+        # arecord not available on this platform (macOS, etc.)
         return None
     except Exception as e:
         print("Failed to detect mic card:", e)
@@ -80,6 +86,9 @@ def get_mic_gain_numid(card_index):
                 match = re.search(r"numid=(\d+)", line)
                 if match:
                     return int(match.group(1))
+    except FileNotFoundError:
+        # amixer not available on this platform (macOS, etc.)
+        return None
     except Exception as e:
         print("Failed to get mic gain numid:", e)
         return None
@@ -283,10 +292,29 @@ def remove_wakeup_clip():
 def speaker_test():
     try:
         sound_path = os.path.join(PROJECT_ROOT, "sounds", "speakertest.wav")
-        card_index = get_usb_pcm_card_index()
-        device = alsa_play_device(card_index)
-        subprocess.Popen(["aplay", "-q", "-D", device, sound_path])
-        return jsonify({"status": f"playing on {device}"})
+
+        # Try Linux ALSA first (Raspberry Pi), fall back to sounddevice (macOS/other)
+        try:
+            # Attempt Linux/Raspberry Pi playback with aplay
+            card_index = get_usb_pcm_card_index()
+            device = alsa_play_device(card_index)
+            subprocess.Popen(["aplay", "-q", "-D", device, sound_path])
+            return jsonify({"status": "Speaker test triggered (ALSA)"})
+        except FileNotFoundError:
+            # aplay not available, use sounddevice (macOS, etc.)
+            import wave
+            with wave.open(sound_path, 'rb') as wf:
+                frames = wf.readframes(wf.getnframes())
+                audio_data = np.frombuffer(frames, dtype=np.int16)
+                sample_rate = wf.getframerate()
+
+                # Normalize to [-1, 1] range for sounddevice
+                audio_data = audio_data.astype(np.float32) / 32768.0
+
+                # Play using the detected output device
+                sd.play(audio_data, sample_rate)
+
+            return jsonify({"status": "Speaker test triggered (sounddevice)"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
