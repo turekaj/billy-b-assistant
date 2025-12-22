@@ -18,9 +18,8 @@ from .config import (
     DEBUG_MODE_INCLUDE_DELTA,
     INSTRUCTIONS,
     MIC_TIMEOUT_SECONDS,
-    OPENAI_API_KEY,
-    OPENAI_MODEL,
     PERSONALITY,
+    REALTIME_AI_PROVIDER,
     RUN_MODE,
     SERVER_VAD_PARAMS,
     SILENCE_THRESHOLD,
@@ -29,6 +28,9 @@ from .config import (
     TURN_EAGERNESS,
 )
 from .ha import send_conversation_prompt
+from .realtime_ai_provider import voice_provider_registry
+from .base_tools import get_base_tools, get_user_tools
+from . import providers  # Import to register providers
 from .logger import logger
 from .mic import MicManager
 from .movements import move_tail_async, stop_all_motors
@@ -205,183 +207,25 @@ def get_tools_for_current_mode():
         f"🔧 get_tools_for_current_mode: CURRENT_USER='{current_user_env}'", "🔧"
     )
 
-    base_tools = [
-        {
-            "name": "update_personality",
-            "type": "function",
-            "description": "Adjusts Billy's personality traits. Accepts numeric values (0-100) or level names (min/low/med/high/max). Call this function when users request personality changes.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    **{
-                        trait: {
-                            "oneOf": [
-                                {"type": "integer", "minimum": 0, "maximum": 100},
-                                {
-                                    "type": "string",
-                                    "enum": ["min", "low", "med", "high", "max"],
-                                },
-                            ]
-                        }
-                        for trait in vars(PERSONALITY)
-                    }
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "play_song",
-            "type": "function",
-            "description": _get_dynamic_song_description(),
-            "parameters": {
-                "type": "object",
-                "properties": {"song": {"type": "string"}},
-                "required": ["song"],
-            },
-        },
-        {
-            "name": "smart_home_command",
-            "type": "function",
-            "description": "Send a DIRECT command to Home Assistant (e.g., 'Turn on lights', 'Set temperature to 72'). **CRITICAL: Only call this for DIRECT commands. If the user asks you to ASK/CHECK/CONFIRM first (e.g., 'ask if lights should be on'), do NOT call this function - just speak the question and wait for their answer.**",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "The DIRECT command to send to Home Assistant (not a question)",
-                    }
-                },
-                "required": ["prompt"],
-            },
-        },
-        {
-            "name": "follow_up_intent",
-            "type": "function",
-            "description": "**MANDATORY: MUST CALL AFTER EVERY RESPONSE**. Call at the end of your turn to indicate if you expect a user reply. Set expects_follow_up=true for questions, false for statements. **CRITICAL: NEVER call this as your ONLY response - you MUST generate spoken audio first, then call this function. If audio is unclear, say 'I didn't catch that' before calling this.**",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "expects_follow_up": {"type": "boolean"},
-                    "suggested_prompt": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["expects_follow_up"],
-            },
-        },
-        {
-            "name": "identify_user",
-            "type": "function",
-            "description": "Call this ONLY when someone explicitly introduces themselves by stating their own name (e.g., 'I am Tom', 'My name is Sarah', 'Hey billy it is tom'). Do NOT call this when someone greets you by name (like 'Hello Billy' or 'Hey Billy'). Only call when they are telling you their own name to switch from guest mode to user mode. IMPORTANT: If you're uncertain about the spelling of a name (e.g., 'Thom' vs 'Tom', 'Sarah' vs 'Sara'), set confidence to 'low' to trigger spelling confirmation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The name the user provided",
-                    },
-                    "confidence": {
-                        "type": "string",
-                        "enum": ["high", "medium", "low"],
-                        "description": "How confident you are about the name spelling",
-                    },
-                    "context": {
-                        "type": "string",
-                        "description": "Any additional context about how they introduced themselves",
-                    },
-                },
-                "required": ["name", "confidence"],
-            },
-        },
-    ]
+    # Get base tools that work with any provider
+    tools = get_base_tools()
 
     # Add user-specific tools only if not in guest mode
     # BUT always include identify_user so Billy can switch from guest to user mode
     if not (current_user_env and current_user_env.lower() == "guest"):
         logger.info("🔧 get_tools_for_current_mode: Adding user-specific tools", "🔧")
-        user_tools = [
-            {
-                "name": "store_memory",
-                "type": "function",
-                "description": "Store lasting preferences, facts, and interests that users VOLUNTARILY share. **CRITICAL: DO NOT STORE answers to YOUR OWN questions!** If you just asked a question, the answer is NOT a memory. Store ONLY when: (1) User volunteers info unprompted, OR (2) Info is NOT answering your question. Examples: WRONG: You: 'What cheese?' User: 'Gruyère' -> DO NOT STORE (answering your question). CORRECT: User: 'I love Gruyère cheese' -> DO STORE (volunteered). Call BEFORE responding with speech when appropriate.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "memory": {
-                            "type": "string",
-                            "description": "The memory or fact to store about the user",
-                        },
-                        "importance": {
-                            "type": "string",
-                            "enum": ["high", "medium", "low"],
-                            "description": "How important this memory is",
-                        },
-                        "category": {
-                            "type": "string",
-                            "enum": [
-                                "preference",
-                                "fact",
-                                "event",
-                                "relationship",
-                                "interest",
-                            ],
-                            "description": "Category of the memory",
-                        },
-                    },
-                    "required": ["memory", "importance", "category"],
-                },
-            },
-            {
-                "name": "manage_profile",
-                "type": "function",
-                "description": "Manage user profile settings and preferences",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "enum": ["create", "update", "switch_persona", "get_info"],
-                            "description": "Action to perform on the profile",
-                        },
-                        "preferred_persona": {
-                            "type": "string",
-                            "description": "User's preferred Billy personality",
-                        },
-                        "notes": {
-                            "type": "string",
-                            "description": "Additional notes about the user",
-                        },
-                    },
-                    "required": ["action"],
-                },
-            },
-            {
-                "name": "switch_persona",
-                "type": "function",
-                "description": "Switch Billy's persona mid-session and acknowledge the change",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "persona": {
-                            "type": "string",
-                            "description": "The persona to switch to",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "Optional reason for the persona switch",
-                        },
-                    },
-                    "required": ["persona"],
-                },
-            },
-        ]
-        base_tools.extend(user_tools)
+        tools.extend(get_user_tools())
     else:
         logger.info(
             "🔧 get_tools_for_current_mode: Guest mode - not adding user-specific tools",
             "🔧",
         )
 
-    return base_tools
+    # Add provider-specific tools
+    provider_tools = voice_provider_registry.get_provider().get_provider_tools()
+    tools.extend(provider_tools)
+
+    return tools
 
 
 class BillySession:
@@ -389,11 +233,13 @@ class BillySession:
         self,
         interrupt_event=None,
         *,
+        conversation_provider=None,
         kickoff_text: str | None = None,
         kickoff_kind: str = "literal",  # "literal" | "prompt" | "raw"
         kickoff_to_interactive: bool = False,  # immediately open-mic after kickoff
         autofollowup: str = "auto",  # "auto" | "never" | "always"
     ):
+        self.realtime_ai_provider = conversation_provider or voice_provider_registry.get_provider(REALTIME_AI_PROVIDER)
         self.ws = None
         self.ws_lock: asyncio.Lock = asyncio.Lock()
         self.loop = None
@@ -547,7 +393,7 @@ class BillySession:
             self._tool_args_buffer.setdefault(name, "")
             self._tool_args_buffer[name] += data.get("arguments", "")
 
-    async def _handle_follow_up_intent(self, raw_args: str | None):
+    async def _handle_follow_up_intent(self, raw_args: str | None, call_id: str | None = None):
         raw_args = raw_args or "{}"
         try:
             args = json.loads(raw_args)
@@ -793,7 +639,7 @@ class BillySession:
             raw_args = self._tool_args_buffer.pop(name, "{}")
 
         if name == "follow_up_intent":
-            await self._handle_follow_up_intent(raw_args)
+            await self._handle_follow_up_intent(raw_args, call_id)
             return
         if name == "update_personality":
             await self._handle_update_personality(raw_args, call_id)
@@ -1110,50 +956,21 @@ class BillySession:
 
         async with self.ws_lock:
             if self.ws is None:
-                uri = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
-                headers = {
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
-                }
+                uri = self.realtime_ai_provider.get_websocket_uri()
+                headers = self.realtime_ai_provider.get_headers()
 
                 try:
                     self.ws = await websockets.asyncio.client.connect(
                         uri, additional_headers=headers
                     )
-                    await self.ws.send(
-                        json.dumps({
-                            "type": "session.update",
-                            "session": {
-                                "type": "realtime",
-                                "instructions": get_instructions_with_user_context(),
-                                "tools": get_tools_for_current_mode(),
-                                "audio": {
-                                    "input": {
-                                        "format": {"type": "audio/pcm", "rate": 24000},
-                                        "turn_detection": {
-                                            "type": "server_vad",
-                                            **SERVER_VAD_PARAMS[TURN_EAGERNESS],
-                                            "create_response": True,
-                                            "interrupt_response": True,
-                                        },
-                                    },
-                                    **(
-                                        {
-                                            "output": {
-                                                "format": {
-                                                    "type": "audio/pcm",
-                                                    "rate": 24000,
-                                                },
-                                                "voice": persona_manager.get_current_persona_voice(),
-                                                "speed": 1.0,
-                                            }
-                                        }
-                                        if not TEXT_ONLY_MODE
-                                        else {}
-                                    ),
-                                },
-                            },
-                        })
+                    session_config = self.realtime_ai_provider.get_initial_session_config(
+                        instructions=get_instructions_with_user_context(),
+                        tools=get_tools_for_current_mode(),
+                        server_vad_params=SERVER_VAD_PARAMS[TURN_EAGERNESS],
+                        text_only_mode=TEXT_ONLY_MODE,
+                        voice=persona_manager.get_current_persona_voice()
                     )
+                    await self.ws.send(json.dumps(session_config))
 
                     # Kickoff message (from MQTT say)
                     if self.kickoff_text:

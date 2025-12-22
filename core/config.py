@@ -210,6 +210,9 @@ Use your backstory to inspire jokes, metaphors, or occasional references in conv
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-realtime-mini")
 
+# === Provider Config ===
+REALTIME_AI_PROVIDER = os.getenv("REALTIME_AI_PROVIDER", "openai")
+
 # === Modes ===
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 # Legacy DEBUG_MODE for backward compatibility
