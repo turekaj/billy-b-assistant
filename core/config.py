@@ -208,6 +208,9 @@ Use your backstory to inspire jokes, metaphors, or occasional references in conv
 
 # === OpenAI Config ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+XAI_API_KEY = os.getenv("XAI_API_KEY", "")
+VOICE_PROVIDER = os.getenv("VOICE_PROVIDER", "openai")
+XAI_VOICE = os.getenv("XAI_VOICE", "Sal")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-realtime-mini")
 
 # === Modes ===

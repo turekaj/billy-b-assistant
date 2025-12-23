@@ -22,6 +22,9 @@ if not ENV_PATH or not os.path.exists(ENV_PATH):
 CONFIG_KEYS = [
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
+    "XAI_API_KEY",
+    "VOICE_PROVIDER",
+    "XAI_VOICE",
     "BILLY_MODEL",
     "BILLY_PINS",
     "MIC_TIMEOUT_SECONDS",

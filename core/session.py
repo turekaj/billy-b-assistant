@@ -27,10 +27,14 @@ from .config import (
     TEXT_ONLY_MODE,
     TOOL_INSTRUCTIONS,
     TURN_EAGERNESS,
+    VOICE_PROVIDER,
+    XAI_API_KEY,
+    XAI_VOICE,
 )
 from .ha import send_conversation_prompt
 from .logger import logger
 from .mic import MicManager
+from .providers import get_voice_provider
 from .movements import move_tail_async, stop_all_motors
 from .mqtt import mqtt_publish
 from .persona import update_persona_ini
@@ -411,9 +415,12 @@ class BillySession:
         self.mic_running = False
         self.mic_timeout_task: asyncio.Task | None = None
 
-        # Track whenever a session is updated after creation, and OpenAI is ready to receive voice.
+        # Track whenever a session is updated after creation, and voice provider is ready to receive voice.
         self.session_initialized = False
         self.run_mode = RUN_MODE
+
+        # Initialize provider based on VOICE_PROVIDER
+        self.provider = get_voice_provider(voice=persona_manager.get_current_persona_voice())
 
         # Kickoff (MQTT say)
         self.kickoff_text = (kickoff_text or "").strip() or None
@@ -792,43 +799,53 @@ class BillySession:
         if not raw_args:
             raw_args = self._tool_args_buffer.pop(name, "{}")
 
+        # Execute the function handler
+        result = {}
         if name == "follow_up_intent":
             await self._handle_follow_up_intent(raw_args)
-            return
-        if name == "update_personality":
+        elif name == "update_personality":
             await self._handle_update_personality(raw_args, call_id)
-            return
-        if name == "play_song":
+        elif name == "play_song":
             await self._handle_play_song(raw_args)
-            return
-        if name == "smart_home_command":
+        elif name == "smart_home_command":
             await self._handle_smart_home_command(raw_args, call_id)
-            return
-        if name == "identify_user":
+        elif name == "identify_user":
             await self._handle_identify_user(raw_args, call_id)
-            return
-        if name == "store_memory":
+        elif name == "store_memory":
             await self._handle_store_memory(raw_args, call_id)
-            return
-        if name == "manage_profile":
+        elif name == "manage_profile":
             await self._handle_manage_profile(raw_args)
-            return
-        if name == "switch_persona":
+        elif name == "switch_persona":
             await self._handle_switch_persona(raw_args)
-            return
+        else:
+            logger.warning(f"Unknown function call: {name}")
+            result = {"error": f"Unknown function: {name}"}
+
+        # Send function call output back to XAI (required for tool calls)
+        await self._ws_send_json({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": json.dumps(result)
+            }
+        })
+
+        # Request the AI to continue with the response
+        await self._ws_send_json({"type": "response.create"})
 
     async def _on_response_done(self, data: dict[str, Any]):
         error = data.get("status_details", {}).get("error")
         if error:
             error_type = error.get("type")
             error_message = error.get("message", "Unknown error")
-            logger.error(f"OpenAI API Error [{error_type}]: {error_message}")
+            logger.error(f"Voice API Error [{error_type}]: {error_message}")
         else:
             logger.success("Assistant response complete.", "✿")
 
         if not TEXT_ONLY_MODE:
             await asyncio.to_thread(audio.playback_queue.join)
-            await asyncio.sleep(1)
+            await asyncio.sleep(3)  # Increased delay to prevent mic feedback
             if len(self.audio_buffer) > 0:
                 logger.verbose(
                     f"Saving audio buffer ({len(self.audio_buffer)} bytes)", "💾"
@@ -1110,50 +1127,21 @@ class BillySession:
 
         async with self.ws_lock:
             if self.ws is None:
-                uri = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
-                headers = {
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
-                }
+                uri = self.provider.get_connection_uri()
+                headers = self.provider.get_headers()
 
                 try:
                     self.ws = await websockets.asyncio.client.connect(
                         uri, additional_headers=headers
                     )
-                    await self.ws.send(
-                        json.dumps({
-                            "type": "session.update",
-                            "session": {
-                                "type": "realtime",
-                                "instructions": get_instructions_with_user_context(),
-                                "tools": get_tools_for_current_mode(),
-                                "audio": {
-                                    "input": {
-                                        "format": {"type": "audio/pcm", "rate": 24000},
-                                        "turn_detection": {
-                                            "type": "server_vad",
-                                            **SERVER_VAD_PARAMS[TURN_EAGERNESS],
-                                            "create_response": True,
-                                            "interrupt_response": True,
-                                        },
-                                    },
-                                    **(
-                                        {
-                                            "output": {
-                                                "format": {
-                                                    "type": "audio/pcm",
-                                                    "rate": 24000,
-                                                },
-                                                "voice": persona_manager.get_current_persona_voice(),
-                                                "speed": 1.0,
-                                            }
-                                        }
-                                        if not TEXT_ONLY_MODE
-                                        else {}
-                                    ),
-                                },
-                            },
-                        })
+                    session_config = self.provider.get_session_config(
+                        instructions=get_instructions_with_user_context(),
+                        tools=get_tools_for_current_mode(),
+                        voice=persona_manager.get_current_persona_voice(),
+                        text_only=TEXT_ONLY_MODE,
+                        vad_params=SERVER_VAD_PARAMS[TURN_EAGERNESS]
                     )
+                    await self.ws.send(json.dumps(session_config))
 
                     # Kickoff message (from MQTT say)
                     if self.kickoff_text:

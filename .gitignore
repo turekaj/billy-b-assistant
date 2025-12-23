@@ -67,7 +67,9 @@ $RECYCLE.BIN/
 *.sln.docstates		# Visual Studio solution document states
 
 # PYTHON-SPECIFIC FILES
-core/__pycache__/
+-core/__pycache__/
+*.pyc
+*.pyo
 
 # PROJECT-SPECIFIC FILES
 .idea
@@ -80,3 +82,4 @@ personas/
 !persona_presets/*/persona.ini
 profiles/
 custom_songs/
+sounds/response_history/

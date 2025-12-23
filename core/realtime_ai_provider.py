@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 class RealtimeAIProvider(ABC):
@@ -16,6 +16,21 @@ class RealtimeAIProvider(ABC):
     @abstractmethod
     def get_provider_name(self) -> str:
         """Return provider identifier"""
+        pass
+
+    @abstractmethod
+    def get_connection_uri(self) -> str:
+        """Return the WebSocket URI for realtime connection"""
+        pass
+
+    @abstractmethod
+    def get_headers(self) -> dict:
+        """Return headers for WebSocket connection"""
+        pass
+
+    @abstractmethod
+    def get_session_config(self, instructions: str, tools: Optional[List[Dict[str, Any]]] = None, voice: Optional[str] = None, text_only: bool = False, vad_params: Optional[Dict[str, Any]] = None) -> dict:
+        """Return the session configuration dict for realtime session.update"""
         pass
 
     @property
