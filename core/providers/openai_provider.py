@@ -2,7 +2,7 @@ import asyncio
 import base64
 import json
 import websockets.asyncio.client
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 from ..realtime_ai_provider import RealtimeAIProvider
 
@@ -92,6 +92,46 @@ class OpenAIProvider(RealtimeAIProvider):
 
     def get_supported_voices(self) -> list[str]:
         return ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+
+    def get_connection_uri(self) -> str:
+        return f"wss://api.openai.com/v1/realtime?model={self.model}"
+
+    def get_headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def get_session_config(self, instructions: str, tools: Optional[List[Dict[str, Any]]] = None, voice: Optional[str] = None, text_only: bool = False, vad_params: Optional[Dict[str, Any]] = None) -> dict:
+        if voice is None:
+            voice = self.default_voice
+        return {
+            "type": "session.update",
+            "session": {
+                "type": "realtime",
+                "instructions": instructions,
+                "tools": tools or [],
+                "audio": {
+                    "input": {
+                        "format": {"type": "audio/pcm", "rate": 24000},
+                        "turn_detection": {
+                            "type": "server_vad",
+                            **(vad_params or {}),
+                            "create_response": True,
+                            "interrupt_response": True,
+                        },
+                    },
+                    **(
+                        {
+                            "output": {
+                                "format": {"type": "audio/pcm", "rate": 24000},
+                                "voice": voice,
+                                "speed": 1.0,
+                            }
+                        }
+                        if not text_only
+                        else {}
+                    ),
+                },
+            },
+        }
 
     def get_provider_name(self) -> str:
         return "openai"
