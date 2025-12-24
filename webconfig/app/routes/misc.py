@@ -21,6 +21,9 @@ def logs():
             "--output=short",
         ])
         return jsonify({"logs": output.decode("utf-8")})
+    except FileNotFoundError:
+        # journalctl not available, return mock logs
+        return jsonify({"logs": "Running in development mode - no systemd logs available"})
     except subprocess.CalledProcessError as e:
         return jsonify({"logs": "Failed to retrieve logs", "error": str(e)}), 500
 
@@ -77,6 +80,9 @@ def service_status():
             ["systemctl", "is-active", "billy.service"], stderr=subprocess.STDOUT
         )
         service_status = output.decode("utf-8").strip()
+    except FileNotFoundError:
+        # systemctl not available (running manually), assume active
+        service_status = "active"
 
         # Get comprehensive status including profiles and configuration
         try:

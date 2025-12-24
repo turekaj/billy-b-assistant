@@ -384,8 +384,8 @@ const PersonaForm = (() => {
         // Load voice setting
         const voiceSelect = document.getElementById("VOICE");
         if (voiceSelect) {
-            // Set voice from persona data, or default to 'ballad' if not specified
-            const voice = data.META && data.META.voice || 'ballad';
+            // Set voice from persona data, or default to 'alloy' if not specified
+            const voice = data.META && data.META.voice || 'alloy';
             voiceSelect.value = voice;
         }
         
@@ -662,7 +662,7 @@ const PersonaForm = (() => {
                             ...persona,
                             displayName: data.META && data.META.name || persona.name,
                             description: data.META && data.META.description || '',
-                            voice: data.META && data.META.voice || 'ballad'
+                            voice: data.META && data.META.voice || 'alloy'
                         };
                     } catch (error) {
                         console.error(`Failed to load data for ${persona.name}:`, error);
@@ -670,7 +670,7 @@ const PersonaForm = (() => {
                             ...persona,
                             displayName: persona.name,
                             description: '',
-                            voice: 'ballad'
+                            voice: 'alloy'
                         };
                     }
                 }));
@@ -1277,7 +1277,39 @@ const PersonaForm = (() => {
         });
     };
 
-    return {addBackstoryField, loadPersona, handlePersonaSave, bindPersonaSelector, populatePersonaSelector, deletePersona, savePersonaAs, showActivePersonaDeleteMessage, showPreferredPersonaDeleteMessage, clearPersonaCache, updatePersonaListSelection, handlePersonaChangeNotification, handlePersonalityChange, syncIconColors, initPersonaMouthArticulationSlider, openCreatePersonaModal, closeCreatePersonaModal, selectPreset, createPersonaFromModal, initCreatePersonaModal};
+    // Populate voice options dynamically from config
+    const populateVoiceOptions = async () => {
+        const voiceSelect = document.getElementById('VOICE');
+        if (!voiceSelect) return;
+
+        try {
+            const configData = await ConfigService.fetchConfig();
+            if (configData && configData.VOICE_OPTIONS) {
+                const currentValue = voiceSelect.value;
+                // Clear existing options
+                voiceSelect.innerHTML = '';
+
+                // Add new options
+                configData.VOICE_OPTIONS.forEach(voice => {
+                    const option = document.createElement('option');
+                    option.value = voice;
+                    option.textContent = voice.charAt(0).toUpperCase() + voice.slice(1); // Capitalize first letter
+                    voiceSelect.appendChild(option);
+                });
+
+                // Restore selection or default to first option
+                if (configData.VOICE_OPTIONS.includes(currentValue)) {
+                    voiceSelect.value = currentValue;
+                } else if (configData.VOICE_OPTIONS.length > 0) {
+                    voiceSelect.value = configData.VOICE_OPTIONS[0];
+                }
+            }
+        } catch (error) {
+            console.error('Failed to populate voice options:', error);
+        }
+    };
+
+    return {addBackstoryField, loadPersona, handlePersonaSave, bindPersonaSelector, populatePersonaSelector, deletePersona, savePersonaAs, showActivePersonaDeleteMessage, showPreferredPersonaDeleteMessage, clearPersonaCache, updatePersonaListSelection, handlePersonaChangeNotification, handlePersonalityChange, syncIconColors, initPersonaMouthArticulationSlider, openCreatePersonaModal, closeCreatePersonaModal, selectPreset, createPersonaFromModal, initCreatePersonaModal, populateVoiceOptions};
 })();
 
 
