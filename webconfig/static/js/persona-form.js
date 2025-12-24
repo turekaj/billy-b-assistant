@@ -473,6 +473,8 @@ const PersonaForm = (() => {
         document.getElementById("persona-form").addEventListener("submit", async (e) => {
             e.preventDefault();
 
+            try {
+
             // Check if the save button is disabled
             const saveButton = document.getElementById("save-persona-btn");
             if (saveButton && saveButton.disabled) {
@@ -544,6 +546,18 @@ const PersonaForm = (() => {
             const displayName = document.getElementById("persona-display-name")?.value.trim() || "";
             const description = document.getElementById("persona-description")?.value.trim() || "";
             const voice = document.getElementById("VOICE").value;
+
+            // Validate that provider is selected
+            const provider = document.getElementById("PROVIDER").value;
+            if (!provider) {
+                throw new Error("Please select an AI provider before saving");
+            }
+
+            // Validate that model is selected
+            const model = document.getElementById("MODEL").value;
+            if (!model) {
+                throw new Error("Please select an AI model before saving");
+            }
             const mouthArticulationInput = document.getElementById("MOUTH_ARTICULATION");
             const mouthArticulation = mouthArticulationInput ? mouthArticulationInput.value : "5";
             
@@ -576,17 +590,37 @@ const PersonaForm = (() => {
             debugLog('INFO', 'Saving persona:', personaName);
             debugLog('VERBOSE', 'Wake-up data:', wakeup);
             
-            await fetch("/persona", {
+            const requestData = {
+                persona_name: personaName,
+                PERSONALITY: personality,
+                BACKSTORY: backstory,
+                META: meta,
+                WAKEUP: wakeup
+            };
+            console.log("DEBUG: Sending persona data:", requestData);
+
+            const response = await fetch("/persona", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({
-                    persona_name: personaName,
-                    PERSONALITY: personality, 
-                    BACKSTORY: backstory, 
-                    META: meta,
-                    WAKEUP: wakeup 
-                })
+                body: JSON.stringify(requestData)
             });
+
+            if (!response.ok) {
+                let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorData.message || errorMessage;
+                } catch (parseError) {
+                    // If response isn't JSON, try to get text
+                    try {
+                        const textResponse = await response.text();
+                        errorMessage = textResponse || errorMessage;
+                    } catch (textError) {
+                        // Use default error message
+                    }
+                }
+                throw new Error(errorMessage);
+            }
 
             showNotification(`Persona "${personaName}" saved`, "success");
             
@@ -607,6 +641,10 @@ const PersonaForm = (() => {
                     showNotification("Persona saved but service restart failed", "warning");
                     ServiceStatus.fetchStatus();
                 }
+            }
+            } catch (error) {
+                console.error('Failed to save persona:', error);
+                showNotification(`Failed to save persona: ${error.message}`, 'error');
             }
         });
     };

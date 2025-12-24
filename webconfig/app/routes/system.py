@@ -199,7 +199,10 @@ def get_config():
     print(f"DEBUG: MODEL_OPTIONS: {models}")
     config_data["MODEL_OPTIONS"] = models
 
-    config_data["DEFAULT_PROVIDER"] = DEFAULT_PROVIDER
+    # Use first available provider as default, or DEFAULT_PROVIDER if available
+    available_providers = voice_provider_registry.get_available_providers()
+    default_provider = available_providers[0] if available_providers else DEFAULT_PROVIDER
+    config_data["DEFAULT_PROVIDER"] = default_provider
     config_data["DEFAULT_MODEL"] = DEFAULT_MODEL
 
     # Add user profile information

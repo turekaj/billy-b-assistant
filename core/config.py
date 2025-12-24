@@ -210,10 +210,13 @@ Use your backstory to inspire jokes, metaphors, or occasional references in conv
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-realtime-mini")
 
+# === XAI Config ===
+XAI_API_KEY = os.getenv("XAI_API_KEY", "")
+
 # === Provider Config ===
 # Provider is now configured per-persona in persona.ini
-DEFAULT_PROVIDER = "xai"
-DEFAULT_MODEL = "grok-realtime"
+DEFAULT_PROVIDER = "openai"
+DEFAULT_MODEL = "gpt-realtime-mini"
 
 # === Modes ===
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

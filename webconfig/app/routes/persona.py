@@ -32,6 +32,16 @@ def get_persona(persona_name):
         if not persona_data:
             return jsonify({"error": f"Persona '{persona_name}' not found"}), 404
 
+        # Check if the persona's provider is available
+        from ..core_imports import voice_provider_registry
+        available_providers = voice_provider_registry.get_available_providers()
+        persona_meta = persona_data.get("meta", {})
+        persona_provider = persona_meta.get("provider")
+
+        provider_warning = None
+        if persona_provider and persona_provider not in available_providers:
+            provider_warning = f"Provider '{persona_provider}' is not available. Available providers: {', '.join(available_providers)}"
+
         # Switch to this persona in the persona manager
         persona_manager.current_persona = persona_name
 
@@ -42,6 +52,9 @@ def get_persona(persona_name):
             "META": persona_data.get("meta", {}),
             "WAKEUP": {},  # Wakeup sounds are handled separately
         }
+
+        if provider_warning:
+            result["warning"] = provider_warning
 
         return jsonify(result)
     except Exception as e:
@@ -104,6 +117,12 @@ def switch_persona():
         if persona_name not in available_personas:
             return jsonify({"error": f"Persona '{persona_name}' not found"}), 404
 
+        # Validate that the persona's provider is available
+        try:
+            provider = persona_manager.get_persona_provider(persona_name)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
         # Switch persona manager to new persona
         persona_manager.switch_persona(persona_name)
 
@@ -131,14 +150,19 @@ def switch_persona():
 
 @bp.route("/persona", methods=["POST"])
 def save_persona():
-    data = request.json
-    persona_name = data.get("persona_name", "default")
+    try:
+        data = request.json
+        persona_name = data.get("persona_name", "default")
 
-    print(
-        f"DEBUG: Saving persona '{persona_name}' with wake-up data: {data.get('WAKEUP', {})}"
-    )
-    print(f"DEBUG: MOUTH_ARTICULATION: {data.get('MOUTH_ARTICULATION', 'NOT_FOUND')}")
-    print(f"DEBUG: Full data keys: {list(data.keys())}")
+        print(f"DEBUG: Received data: {data}")
+        print(
+            f"DEBUG: Saving persona '{persona_name}' with wake-up data: {data.get('WAKEUP', {})}"
+        )
+        print(f"DEBUG: MOUTH_ARTICULATION: {data.get('MOUTH_ARTICULATION', 'NOT_FOUND')}")
+        print(f"DEBUG: Full data keys: {list(data.keys())}")
+    except Exception as e:
+        print(f"ERROR: Failed to parse request JSON: {e}")
+        return jsonify({"error": f"Invalid JSON data: {str(e)}"}), 400
 
     # Determine the file path based on persona name
     if persona_name == "default":
@@ -152,55 +176,88 @@ def save_persona():
 
     print(f"DEBUG: Saving to file: {persona_file}")
 
-    config = configparser.ConfigParser()
-    config["PERSONALITY"] = {k: str(v) for k, v in data.get("PERSONALITY", {}).items()}
-    config["BACKSTORY"] = data.get("BACKSTORY", {})
+    try:
+        config = configparser.ConfigParser()
+        config["PERSONALITY"] = {k: str(v) for k, v in data.get("PERSONALITY", {}).items()}
+        config["BACKSTORY"] = {k: str(v) for k, v in data.get("BACKSTORY", {}).items()}
+        print(f"DEBUG: Personality data: {data.get('PERSONALITY', {})}")
+        print(f"DEBUG: Backstory data: {data.get('BACKSTORY', {})}")
+    except Exception as e:
+        print(f"ERROR: Failed to process personality/backstory data: {e}")
+        return jsonify({"error": f"Invalid personality/backstory data: {str(e)}"}), 400
 
-    # Handle META section - can be string or object
+    # Validate that provider is specified
+    provider = None
     meta_data = data.get("META", "")
     if isinstance(meta_data, dict):
-        # META is an object with name, description, instructions, voice
-        config["META"] = {
-            "name": meta_data.get("name", ""),
-            "description": meta_data.get("description", ""),
-            "instructions": meta_data.get("instructions", ""),
-            "voice": meta_data.get("voice", data.get("VOICE", "ballad")),
-            "mouth_articulation": meta_data.get(
-                "mouth_articulation", data.get("MOUTH_ARTICULATION", "5")
-            ),
-            "provider": meta_data.get("provider", data.get("PROVIDER", DEFAULT_PROVIDER)),
-            "model": meta_data.get("model", data.get("MODEL", DEFAULT_MODEL)),
-        }
+        provider = meta_data.get("provider", data.get("PROVIDER"))
     else:
-        # META is a string (instructions only)
-        config["META"] = {
-            "instructions": meta_data,
-            "voice": data.get("VOICE", "ballad"),
-            "mouth_articulation": data.get("MOUTH_ARTICULATION", "5"),
-            "provider": data.get("PROVIDER", DEFAULT_PROVIDER),
-            "model": data.get("MODEL", DEFAULT_MODEL),
+        provider = data.get("PROVIDER")
+
+    if not provider:
+        return jsonify({"error": "Provider must be explicitly specified for each persona"}), 400
+
+    try:
+        # Handle META section - can be string or object
+        if isinstance(meta_data, dict):
+            # META is an object with name, description, instructions, voice
+            config["META"] = {
+                "name": meta_data.get("name", ""),
+                "description": meta_data.get("description", ""),
+                "instructions": meta_data.get("instructions", ""),
+                "voice": meta_data.get("voice", data.get("VOICE", "ballad")),
+                "mouth_articulation": meta_data.get(
+                    "mouth_articulation", data.get("MOUTH_ARTICULATION", "5")
+                ),
+                "provider": provider,
+                "model": meta_data.get("model", data.get("MODEL", DEFAULT_MODEL)),
+            }
+        else:
+            # META is a string (instructions only)
+            config["META"] = {
+                "instructions": meta_data,
+                "voice": data.get("VOICE", "ballad"),
+                "mouth_articulation": data.get("MOUTH_ARTICULATION", "5"),
+                "provider": provider,
+                "model": data.get("MODEL", DEFAULT_MODEL),
+            }
+
+        print(f"DEBUG: META section being written: {config['META']}")
+        wakeup = data.get("WAKEUP", {})
+        print(f"DEBUG: Raw wakeup data: {wakeup}")
+        config["WAKEUP"] = {
+            str(k): v["text"] if isinstance(v, dict) and "text" in v else str(v)
+            for k, v in wakeup.items()
         }
+        print(f"DEBUG: Processed wakeup data: {config['WAKEUP']}")
+    except Exception as e:
+        print(f"ERROR: Failed to process META/wakeup data: {e}")
+        return jsonify({"error": f"Invalid META/wakeup data: {str(e)}"}), 400
 
-    print(f"DEBUG: META section being written: {config['META']}")
-    wakeup = data.get("WAKEUP", {})
-    config["WAKEUP"] = {
-        str(k): v["text"] if isinstance(v, dict) and "text" in v else str(v)
-        for k, v in wakeup.items()
-    }
+    try:
+        # Ensure the personas directory exists
+        if persona_name != "default":
+            persona_file.parent.mkdir(exist_ok=True)
 
-    # Ensure the personas directory exists
-    if persona_name != "default":
-        persona_file.parent.mkdir(exist_ok=True)
+        print(f"DEBUG: Writing config to {persona_file}")
+        print(f"DEBUG: Config sections: {config.sections()}")
+        for section in config.sections():
+            print(f"DEBUG: Section {section}: {dict(config[section])}")
 
-    with open(persona_file, "w") as f:
-        config.write(f)
+        with open(persona_file, "w") as f:
+            config.write(f)
 
-    # Clear the persona cache so fresh data is loaded next time
-    from core.persona_manager import persona_manager
+        print(f"DEBUG: Successfully wrote config file")
 
-    persona_manager.clear_persona_cache(persona_name)
+        # Clear the persona cache so fresh data is loaded next time
+        from core.persona_manager import persona_manager
 
-    return jsonify({"status": "ok"})
+        persona_manager.clear_persona_cache(persona_name)
+
+        return jsonify({"message": f"Persona '{persona_name}' saved successfully"})
+    except Exception as e:
+        print(f"ERROR: Failed to save persona file: {e}")
+        return jsonify({"error": f"Failed to save persona: {str(e)}"}), 500
 
 
 @bp.route("/persona/wakeup", methods=["POST"])

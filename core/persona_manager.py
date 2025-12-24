@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .config import DEFAULT_PROVIDER, DEFAULT_MODEL
+from .realtime_ai_provider import voice_provider_registry
 from .logger import logger
 
 
@@ -190,9 +191,22 @@ class PersonaManager:
         """Get the provider setting for a specific persona."""
         persona_data = self.load_persona(persona_name)
         if not persona_data:
-            return DEFAULT_PROVIDER
+            raise ValueError(f"Persona '{persona_name}' not found")
 
-        return persona_data['meta'].get('provider', DEFAULT_PROVIDER)
+        meta = persona_data.get('meta', {})
+        if 'provider' not in meta:
+            raise ValueError(f"Persona '{persona_name}' must explicitly specify a 'provider' in the [META] section")
+
+        provider = meta['provider']
+        available_providers = voice_provider_registry.get_available_providers()
+        if not available_providers:
+            raise ValueError("No AI providers are configured. Please set OPENAI_API_KEY or XAI_API_KEY environment variables.")
+
+        if provider not in available_providers:
+            available_str = ", ".join(available_providers)
+            raise ValueError(f"Provider '{provider}' specified in persona '{persona_name}' is not available. Available providers: {available_str}")
+
+        return provider
 
     def get_current_persona_provider(self) -> str:
         """Get the provider setting for the current persona."""
