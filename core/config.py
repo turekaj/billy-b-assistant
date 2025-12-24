@@ -211,7 +211,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-realtime-mini")
 
 # === Provider Config ===
-REALTIME_AI_PROVIDER = os.getenv("REALTIME_AI_PROVIDER", "openai")
+# Provider is now configured per-persona in persona.ini
+DEFAULT_PROVIDER = "xai"
+DEFAULT_MODEL = "grok-realtime"
 
 # === Modes ===
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

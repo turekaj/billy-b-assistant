@@ -2,6 +2,7 @@ import configparser
 
 from flask import Blueprint, jsonify, request, send_file
 
+from core.config import DEFAULT_PROVIDER, DEFAULT_MODEL
 from ..state import PERSONA_PATH
 
 
@@ -167,6 +168,8 @@ def save_persona():
             "mouth_articulation": meta_data.get(
                 "mouth_articulation", data.get("MOUTH_ARTICULATION", "5")
             ),
+            "provider": meta_data.get("provider", data.get("PROVIDER", DEFAULT_PROVIDER)),
+            "model": meta_data.get("model", data.get("MODEL", DEFAULT_MODEL)),
         }
     else:
         # META is a string (instructions only)
@@ -174,6 +177,8 @@ def save_persona():
             "instructions": meta_data,
             "voice": data.get("VOICE", "ballad"),
             "mouth_articulation": data.get("MOUTH_ARTICULATION", "5"),
+            "provider": data.get("PROVIDER", DEFAULT_PROVIDER),
+            "model": data.get("MODEL", DEFAULT_MODEL),
         }
 
     print(f"DEBUG: META section being written: {config['META']}")

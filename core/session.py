@@ -19,7 +19,6 @@ from .config import (
     INSTRUCTIONS,
     MIC_TIMEOUT_SECONDS,
     PERSONALITY,
-    REALTIME_AI_PROVIDER,
     RUN_MODE,
     SERVER_VAD_PARAMS,
     SILENCE_THRESHOLD,
@@ -239,7 +238,7 @@ class BillySession:
         kickoff_to_interactive: bool = False,  # immediately open-mic after kickoff
         autofollowup: str = "auto",  # "auto" | "never" | "always"
     ):
-        self.realtime_ai_provider = conversation_provider or voice_provider_registry.get_provider(REALTIME_AI_PROVIDER)
+        self.realtime_ai_provider = conversation_provider or voice_provider_registry.get_provider(persona_manager.get_current_persona_provider())
         self.ws = None
         self.ws_lock: asyncio.Lock = asyncio.Lock()
         self.loop = None
@@ -956,7 +955,7 @@ class BillySession:
 
         async with self.ws_lock:
             if self.ws is None:
-                uri = self.realtime_ai_provider.get_websocket_uri()
+                uri = self.realtime_ai_provider.get_websocket_uri(model=persona_manager.get_current_persona_model())
                 headers = self.realtime_ai_provider.get_headers()
 
                 try:
@@ -968,7 +967,8 @@ class BillySession:
                         tools=get_tools_for_current_mode(),
                         server_vad_params=SERVER_VAD_PARAMS[TURN_EAGERNESS],
                         text_only_mode=TEXT_ONLY_MODE,
-                        voice=persona_manager.get_current_persona_voice()
+                        voice=persona_manager.get_current_persona_voice(),
+                        model=persona_manager.get_current_persona_model()
                     )
                     await self.ws.send(json.dumps(session_config))
 

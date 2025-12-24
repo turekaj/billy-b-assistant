@@ -14,6 +14,11 @@ class RealtimeAIProvider(ABC):
         pass
 
     @abstractmethod
+    def get_supported_models(self) -> list[str]:
+        """Return list of supported model names"""
+        pass
+
+    @abstractmethod
     def get_provider_name(self) -> str:
         """Return provider identifier"""
         pass
@@ -26,7 +31,7 @@ class RealtimeAIProvider(ABC):
 
     # Conversation methods
     @abstractmethod
-    def get_websocket_uri(self) -> str:
+    def get_websocket_uri(self, model: Optional[str] = None) -> str:
         """Return the WebSocket URI for the provider"""
         pass
 

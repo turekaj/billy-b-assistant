@@ -7,6 +7,7 @@ import configparser
 from pathlib import Path
 from typing import Any, Optional
 
+from .config import DEFAULT_PROVIDER, DEFAULT_MODEL
 from .logger import logger
 
 
@@ -184,6 +185,30 @@ class PersonaManager:
     def get_current_persona_voice(self) -> str:
         """Get the voice setting for the current persona."""
         return self.get_persona_voice(self.current_persona)
+
+    def get_persona_provider(self, persona_name: str) -> str:
+        """Get the provider setting for a specific persona."""
+        persona_data = self.load_persona(persona_name)
+        if not persona_data:
+            return DEFAULT_PROVIDER
+
+        return persona_data['meta'].get('provider', DEFAULT_PROVIDER)
+
+    def get_current_persona_provider(self) -> str:
+        """Get the provider setting for the current persona."""
+        return self.get_persona_provider(self.current_persona)
+
+    def get_persona_model(self, persona_name: str) -> str:
+        """Get the model setting for a specific persona."""
+        persona_data = self.load_persona(persona_name)
+        if not persona_data:
+            return DEFAULT_MODEL
+
+        return persona_data['meta'].get('model', DEFAULT_MODEL)
+
+    def get_current_persona_model(self) -> str:
+        """Get the model setting for the current persona."""
+        return self.get_persona_model(self.current_persona)
 
     def clear_persona_cache(self, persona_name: str = None) -> None:
         """Clear the cache for a specific persona or all personas."""

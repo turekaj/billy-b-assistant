@@ -381,6 +381,23 @@ const PersonaForm = (() => {
             descriptionInput.value = data.META && data.META.description || "";
         }
         
+        const providerSelect = document.getElementById("PROVIDER");
+        if (providerSelect) {
+            // Set provider from persona data, or default to 'openai' if not specified
+            const provider = data.META && data.META.provider || 'openai';
+            providerSelect.value = provider;
+            // Update model and voice options for the loaded provider
+            await populateModelOptions();
+            await populateVoiceOptions();
+        }
+
+        const modelSelect = document.getElementById("MODEL");
+        if (modelSelect) {
+            // Set model from persona data, or default to 'gpt-realtime-mini' if not specified
+            const model = data.META && data.META.model || 'gpt-realtime-mini';
+            modelSelect.value = model;
+        }
+
         // Load voice setting
         const voiceSelect = document.getElementById("VOICE");
         if (voiceSelect) {
@@ -538,6 +555,8 @@ const PersonaForm = (() => {
                 name: displayName,
                 description: description,
                 instructions: instructions,
+                provider: document.getElementById("PROVIDER").value,
+                model: document.getElementById("MODEL").value,
                 voice: voice,
                 mouth_articulation: mouthArticulation
             };
@@ -578,22 +597,14 @@ const PersonaForm = (() => {
             await loadPersona(personaName);
             
             if (wasActive === "active") {
-                // Auto-refresh configuration instead of restarting services
+                // Voice changes require session restart, so always restart Billy service
                 try {
-                    const refreshResponse = await fetch("/config/auto-refresh", {method: "POST"});
-                    const refreshData = await refreshResponse.json();
-                    
-                    if (refreshData.status === "ok") {
-                        showNotification("Persona saved and applied", "success");
-                        ServiceStatus.fetchStatus();
-                    } else {
-                        throw new Error(refreshData.error || "Auto-refresh failed");
-                    }
-                } catch (error) {
-                    console.error("Auto-refresh failed, falling back to restart:", error);
-                    // Fallback to restart Billy service if auto-refresh fails
                     await fetch("/restart-billy", {method: "POST"});
                     showNotification("Persona saved – service restarted", "success");
+                    ServiceStatus.fetchStatus();
+                } catch (error) {
+                    console.error("Failed to restart Billy service:", error);
+                    showNotification("Persona saved but service restart failed", "warning");
                     ServiceStatus.fetchStatus();
                 }
             }
@@ -1027,6 +1038,8 @@ const PersonaForm = (() => {
                     name: displayName,
                     description: description,
                     instructions: instructions,
+                    provider: document.getElementById("PROVIDER").value,
+                    model: document.getElementById("MODEL").value,
                     voice: voice,
                     mouth_articulation: mouthArticulation
                 },
@@ -1277,20 +1290,136 @@ const PersonaForm = (() => {
         });
     };
 
-    // Populate voice options dynamically from config
-    const populateVoiceOptions = async () => {
-        const voiceSelect = document.getElementById('VOICE');
-        if (!voiceSelect) return;
+    // Populate provider options dynamically from config
+    const populateProviderOptions = async () => {
+        const providerSelect = document.getElementById('PROVIDER');
+        if (!providerSelect) return;
 
         try {
             const configData = await ConfigService.fetchConfig();
-            if (configData && configData.VOICE_OPTIONS) {
+            if (configData && configData.PROVIDER_OPTIONS) {
+                const currentValue = providerSelect.value;
+                // Clear existing options
+                providerSelect.innerHTML = '';
+
+                // Add new options
+                configData.PROVIDER_OPTIONS.forEach(provider => {
+                    const option = document.createElement('option');
+                    option.value = provider;
+                    option.textContent = provider; // Keep lowercase
+                    providerSelect.appendChild(option);
+                });
+
+                // Restore selection or default to first option
+                if (configData.PROVIDER_OPTIONS.includes(currentValue)) {
+                    providerSelect.value = currentValue;
+                } else if (configData.PROVIDER_OPTIONS.length > 0) {
+                    providerSelect.value = configData.PROVIDER_OPTIONS[0];
+                }
+
+                // When provider changes, update model and voice options
+                providerSelect.addEventListener('change', async () => {
+                    await populateModelOptions();
+                    await populateVoiceOptions();
+                });
+            }
+        } catch (error) {
+            console.error('Failed to populate provider options:', error);
+        }
+    };
+
+    // Populate model options dynamically from the selected provider
+    const populateModelOptions = async () => {
+        const modelSelect = document.getElementById('MODEL');
+        const providerSelect = document.getElementById('PROVIDER');
+        if (!modelSelect || !providerSelect) return;
+
+        const selectedProvider = providerSelect.value;
+        if (!selectedProvider) return;
+
+        try {
+            const response = await fetch(`/providers/${selectedProvider}/models`);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch models for provider ${selectedProvider}`);
+            }
+            const data = await response.json();
+            if (data.models) {
+                const currentValue = modelSelect.value;
+                // Clear existing options
+                modelSelect.innerHTML = '';
+
+                // Add new options
+                data.models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    modelSelect.appendChild(option);
+                });
+
+                // Restore selection or default to first option
+                if (data.models.includes(currentValue)) {
+                    modelSelect.value = currentValue;
+                } else if (data.models.length > 0) {
+                    modelSelect.value = data.models[0];
+                }
+            }
+        } catch (error) {
+            console.error('Failed to populate model options:', error);
+        }
+    };
+
+    // Populate voice options dynamically from the selected provider
+    const populateVoiceOptions = async () => {
+        const voiceSelect = document.getElementById('VOICE');
+        const providerSelect = document.getElementById('PROVIDER');
+        if (!voiceSelect) return;
+
+        const selectedProvider = providerSelect ? providerSelect.value : null;
+
+        // If no provider selected, fall back to global config
+        if (!selectedProvider) {
+            try {
+                const configData = await ConfigService.fetchConfig();
+                if (configData && configData.VOICE_OPTIONS) {
+                    const currentValue = voiceSelect.value;
+                    // Clear existing options
+                    voiceSelect.innerHTML = '';
+
+                    // Add new options
+                    configData.VOICE_OPTIONS.forEach(voice => {
+                        const option = document.createElement('option');
+                        option.value = voice;
+                        option.textContent = voice.charAt(0).toUpperCase() + voice.slice(1); // Capitalize first letter
+                        voiceSelect.appendChild(option);
+                    });
+
+                    // Restore selection or default to first option
+                    if (configData.VOICE_OPTIONS.includes(currentValue)) {
+                        voiceSelect.value = currentValue;
+                    } else if (configData.VOICE_OPTIONS.length > 0) {
+                        voiceSelect.value = configData.VOICE_OPTIONS[0];
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to populate voice options from global config:', error);
+            }
+            return;
+        }
+
+        // Provider-specific voices
+        try {
+            const response = await fetch(`/providers/${selectedProvider}/voices`);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch voices for provider ${selectedProvider}`);
+            }
+            const data = await response.json();
+            if (data.voices) {
                 const currentValue = voiceSelect.value;
                 // Clear existing options
                 voiceSelect.innerHTML = '';
 
                 // Add new options
-                configData.VOICE_OPTIONS.forEach(voice => {
+                data.voices.forEach(voice => {
                     const option = document.createElement('option');
                     option.value = voice;
                     option.textContent = voice.charAt(0).toUpperCase() + voice.slice(1); // Capitalize first letter
@@ -1298,10 +1427,10 @@ const PersonaForm = (() => {
                 });
 
                 // Restore selection or default to first option
-                if (configData.VOICE_OPTIONS.includes(currentValue)) {
+                if (data.voices.includes(currentValue)) {
                     voiceSelect.value = currentValue;
-                } else if (configData.VOICE_OPTIONS.length > 0) {
-                    voiceSelect.value = configData.VOICE_OPTIONS[0];
+                } else if (data.voices.length > 0) {
+                    voiceSelect.value = data.voices[0];
                 }
             }
         } catch (error) {
@@ -1309,7 +1438,7 @@ const PersonaForm = (() => {
         }
     };
 
-    return {addBackstoryField, loadPersona, handlePersonaSave, bindPersonaSelector, populatePersonaSelector, deletePersona, savePersonaAs, showActivePersonaDeleteMessage, showPreferredPersonaDeleteMessage, clearPersonaCache, updatePersonaListSelection, handlePersonaChangeNotification, handlePersonalityChange, syncIconColors, initPersonaMouthArticulationSlider, openCreatePersonaModal, closeCreatePersonaModal, selectPreset, createPersonaFromModal, initCreatePersonaModal, populateVoiceOptions};
+    return {addBackstoryField, loadPersona, handlePersonaSave, bindPersonaSelector, populatePersonaSelector, deletePersona, savePersonaAs, showActivePersonaDeleteMessage, showPreferredPersonaDeleteMessage, clearPersonaCache, updatePersonaListSelection, handlePersonaChangeNotification, handlePersonalityChange, syncIconColors, initPersonaMouthArticulationSlider, openCreatePersonaModal, closeCreatePersonaModal, selectPreset, createPersonaFromModal, initCreatePersonaModal, populateProviderOptions, populateModelOptions, populateVoiceOptions};
 })();
 
 

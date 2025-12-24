@@ -47,50 +47,6 @@
                 </div>
             </div>
 
-            <label class="block mb-4">
-                <label for="OPENAI_MODEL" class="flex justify-between items-center font-semibold text-sm text-slate-300 relative">
-                    OpenAI Realtime API Model
-                    <span class="material-icons align-middle hover:text-cyan-400 cursor-pointer ml-1"
-                          onclick="toggleTooltip(this)">
-                        help_outline
-                    </span>
-                </label>
-                <div class="relative">
-                    <div data-tooltip>
-                        Choose between the two realtime models that are currently available:<br>
-                        <strong>gpt-4o-mini-realtime-preview</strong> is cheaper and the default.<br>
-                        <strong>gpt-realtime</strong> is higher performance but also more expensive in token usage (~ ×6.66 compared to mini).
-                        <br><br>
-                        <strong>gpt-realtime-mini</strong> same cost as the mini preview.<br>
-                        <strong>gpt-4o-realtime-preview</strong> is deprecated (and most expensive).<br><br>
-                        See <a href="https://openai.com/api/pricing/" target="_blank" class="underline hover:text-cyan-400">OpenAI Realtime API Pricing</a> for details .
-                    </div>
-
-                    <select id="OPENAI_MODEL" name="OPENAI_MODEL"
-                            class="w-full p-3 mt-1 bg-zinc-800 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                        <option value="gpt-4o-mini-realtime-preview"
-                                {% if config.get(
-                        'OPENAI_MODEL') == 'gpt-4o-mini-realtime-preview' %}selected{% endif %}>
-                        gpt-4o-mini-realtime-preview (default)
-                        </option>
-                        <option value="gpt-realtime"
-                                {% if config.get(
-                        'OPENAI_MODEL') == 'gpt-realtime' %}selected{% endif %}>
-                        gpt-realtime (better but more expensive)
-                        </option>
-                        <option value="gpt-realtime-mini"
-                                {% if config.get(
-                        'OPENAI_MODEL') == 'gpt-realtime-mini' %}selected{% endif %}>
-                        gpt-realtime-mini
-                        </option>
-                        <option value="gpt-4o-realtime-preview" disabled
-                                {% if config.get(
-                        'OPENAI_MODEL') == 'gpt-4o-realtime-preview' %}selected{% endif %}>
-                        gpt-4o-realtime-preview (deprecated)
-                        </option>
-                    </select>
-                </div>
-            </label>
 
             <div class="flex gap-2">
                 <div class="mb-4 grow flex flex-col justify-between">

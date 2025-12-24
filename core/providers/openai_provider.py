@@ -92,7 +92,10 @@ class OpenAIProvider(RealtimeAIProvider):
             return bytes(audio_bytes)
 
     def get_supported_voices(self) -> list[str]:
-        return ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+        return ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"]
+
+    def get_supported_models(self) -> list[str]:
+        return ["gpt-4o-realtime-preview", "gpt-4o-mini-realtime-preview", "gpt-realtime-mini"]
 
     def get_provider_name(self) -> str:
         return "openai"
@@ -102,8 +105,9 @@ class OpenAIProvider(RealtimeAIProvider):
         return "alloy"
 
     # Conversation methods
-    def get_websocket_uri(self) -> str:
-        return f"wss://api.openai.com/v1/realtime?model={self.model}"
+    def get_websocket_uri(self, model: Optional[str] = None) -> str:
+        model_to_use = model or self.model
+        return f"wss://api.openai.com/v1/realtime?model={model_to_use}"
 
     def get_headers(self) -> Dict[str, str]:
         return {
@@ -114,6 +118,7 @@ class OpenAIProvider(RealtimeAIProvider):
         server_vad_params = kwargs.get("server_vad_params", {})
         text_only_mode = kwargs.get("text_only_mode", False)
         voice = kwargs.get("voice", self.default_voice)
+        model = kwargs.get("model", self.model)
 
         audio_config = {
             "input": {

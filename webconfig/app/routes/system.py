@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, render_template, request
 from packaging.version import parse as parse_version
 
 from ..core_imports import core_config, voice_provider_registry
+from core.config import DEFAULT_PROVIDER, DEFAULT_MODEL
 from ..state import PROJECT_ROOT, RELEASE_NOTE, load_versions, save_versions
 
 
@@ -189,6 +190,18 @@ def get_config():
     print(f"DEBUG: VOICE_OPTIONS: {voices}")
     config_data["VOICE_OPTIONS"] = voices
 
+    # Add provider and model options
+    providers = voice_provider_registry.get_available_providers()
+    print(f"DEBUG: PROVIDER_OPTIONS: {providers}")
+    config_data["PROVIDER_OPTIONS"] = providers
+
+    models = current_provider.get_supported_models()
+    print(f"DEBUG: MODEL_OPTIONS: {models}")
+    config_data["MODEL_OPTIONS"] = models
+
+    config_data["DEFAULT_PROVIDER"] = DEFAULT_PROVIDER
+    config_data["DEFAULT_MODEL"] = DEFAULT_MODEL
+
     # Add user profile information
     try:
         from core.config import DEFAULT_USER
@@ -282,6 +295,26 @@ def get_config():
         config_data["AVAILABLE_PERSONAS"] = []
 
     return jsonify(config_data)
+
+
+@bp.route("/providers/<provider_name>/models", methods=["GET"])
+def get_provider_models(provider_name):
+    try:
+        provider = voice_provider_registry.get_provider(provider_name)
+        models = provider.get_supported_models()
+        return jsonify({"models": models})
+    except ValueError:
+        return jsonify({"error": "Provider not found"}), 404
+
+
+@bp.route("/providers/<provider_name>/voices", methods=["GET"])
+def get_provider_voices(provider_name):
+    try:
+        provider = voice_provider_registry.get_provider(provider_name)
+        voices = provider.get_supported_voices()
+        return jsonify({"voices": voices})
+    except ValueError:
+        return jsonify({"error": "Provider not found"}), 404
 
 
 @bp.route("/profiles/current-user", methods=["PATCH"])
